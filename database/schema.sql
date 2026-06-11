@@ -113,7 +113,8 @@ CREATE INDEX idx_questions_survey ON questions(survey_id);
 CREATE INDEX idx_responses_survey ON responses(survey_id);
 CREATE INDEX idx_answers_response ON answers(response_id);
 
+-- Default password for seed accounts: 123456
 INSERT INTO users (full_name, email, password_hash, role, stakeholder_group) VALUES
-('Quản trị viên', 'admin@example.com', '$2b$10$example_hash', 'admin', 'staff'),
-('Cán bộ khảo sát', 'creator@example.com', '$2b$10$example_hash', 'survey_creator', 'staff'),
-('Người tham gia mẫu', 'student@example.com', '$2b$10$example_hash', 'respondent', 'student');
+('Quản trị viên', 'admin@example.com', '$2b$10$JXXWQsv1kvzW1TYcqCmE9u.tAUhWVi0NqHaPtRlII0/AVttD4rQZe', 'admin', 'staff'),
+('Cán bộ khảo sát', 'creator@example.com', '$2b$10$JXXWQsv1kvzW1TYcqCmE9u.tAUhWVi0NqHaPtRlII0/AVttD4rQZe', 'survey_creator', 'staff'),
+('Người tham gia mẫu', 'student@example.com', '$2b$10$JXXWQsv1kvzW1TYcqCmE9u.tAUhWVi0NqHaPtRlII0/AVttD4rQZe', 'respondent', 'student');

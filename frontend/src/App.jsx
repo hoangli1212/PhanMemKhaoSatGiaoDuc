@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react'
 import './App.css'
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:3000/api'
+
 const navItems = [
   { id: 'dashboard', label: 'Tổng quan', icon: 'dashboard' },
   { id: 'surveys', label: 'Khảo sát', icon: 'survey' },
@@ -57,6 +59,23 @@ function App() {
   const [activePage, setActivePage] = useState('dashboard')
   const [role, setRole] = useState('Admin')
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [auth, setAuth] = useState(() => {
+    const token = localStorage.getItem('authToken')
+    const user = localStorage.getItem('authUser')
+
+    if (!token || !user) return null
+
+    try {
+      return {
+        token,
+        user: JSON.parse(user),
+      }
+    } catch {
+      localStorage.removeItem('authToken')
+      localStorage.removeItem('authUser')
+      return null
+    }
+  })
 
   const title = useMemo(() => {
     return navItems.find((item) => item.id === activePage)?.label || 'Tổng quan'
@@ -65,6 +84,25 @@ function App() {
   const goTo = (page) => {
     setActivePage(page)
     setSidebarOpen(false)
+  }
+
+  const handleLogin = (loginResult) => {
+    localStorage.setItem('authToken', loginResult.token)
+    localStorage.setItem('authUser', JSON.stringify(loginResult.user))
+    setAuth(loginResult)
+    setRole(loginResult.user.role)
+  }
+
+  const handleLogout = () => {
+    localStorage.removeItem('authToken')
+    localStorage.removeItem('authUser')
+    setAuth(null)
+    setActivePage('dashboard')
+    setSidebarOpen(false)
+  }
+
+  if (!auth) {
+    return <LoginScreen onLogin={handleLogin} />
   }
 
   return (
@@ -124,6 +162,12 @@ function App() {
             <Icon name="plus" />
             Tạo khảo sát
           </button>
+          <div className="account-box">
+            <span>{auth.user.full_name}</span>
+            <button className="secondary-button small" onClick={handleLogout}>
+              Đăng xuất
+            </button>
+          </div>
         </header>
 
         <section className="content">
@@ -136,6 +180,97 @@ function App() {
         </section>
       </main>
     </div>
+  )
+}
+
+function LoginScreen({ onLogin }) {
+  const [email, setEmail] = useState('admin@example.com')
+  const [password, setPassword] = useState('123456')
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [error, setError] = useState('')
+
+  const handleSubmit = async (event) => {
+    event.preventDefault()
+    setError('')
+    setIsSubmitting(true)
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email, password }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Đăng nhập thất bại')
+      }
+
+      onLogin(data)
+    } catch (err) {
+      setError(err.message || 'Không thể kết nối đến máy chủ')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  return (
+    <main className="login-page">
+      <section className="login-panel">
+        <div className="login-brand">
+          <div className="brand-mark">KS</div>
+          <div>
+            <strong>EduSurvey</strong>
+            <span>Hệ thống khảo sát giáo dục</span>
+          </div>
+        </div>
+
+        <div className="login-copy">
+          <h1>Đăng nhập hệ thống</h1>
+          <p>Sử dụng tài khoản được cấp để quản lý khảo sát, câu hỏi và phản hồi.</p>
+        </div>
+
+        <form className="login-form" onSubmit={handleSubmit}>
+          <label>
+            Email
+            <input
+              type="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              autoComplete="email"
+              required
+            />
+          </label>
+
+          <label>
+            Mật khẩu
+            <input
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              autoComplete="current-password"
+              required
+            />
+          </label>
+
+          {error && <div className="login-error">{error}</div>}
+
+          <button className="primary-button" type="submit" disabled={isSubmitting}>
+            {isSubmitting ? 'Đang đăng nhập...' : 'Đăng nhập'}
+          </button>
+        </form>
+
+        <div className="demo-account">
+          <strong>Tài khoản mẫu</strong>
+          <span>admin@example.com / 123456</span>
+          <span>creator@example.com / 123456</span>
+          <span>student@example.com / 123456</span>
+        </div>
+      </section>
+    </main>
   )
 }
 
