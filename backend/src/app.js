@@ -1,17 +1,14 @@
 import cors from 'cors'
 import express from 'express'
 
+import healthRoutes from './routes/healthRoutes.js'
+
 const app = express()
 
 app.use(cors())
 app.use(express.json())
 
-app.get('/health', (req, res) => {
-  res.json({
-    status: 'ok',
-    service: 'edu-survey-backend',
-  })
-})
+app.use('/health', healthRoutes)
 
 app.use((req, res) => {
   res.status(404).json({
