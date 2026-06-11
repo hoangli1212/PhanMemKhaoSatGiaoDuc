@@ -283,7 +283,8 @@ svg {
 
 .grid-2,
 .builder-grid,
-.response-grid {
+.response-grid,
+.crud-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.65fr);
   gap: 20px;
@@ -349,7 +350,8 @@ svg {
 
 .primary-button,
 .secondary-button,
-.icon-button {
+.icon-button,
+.danger-button {
   min-height: 40px;
   border: 0;
   border-radius: 8px;
@@ -374,6 +376,17 @@ svg {
 }
 
 .secondary-button.small {
+  min-height: 34px;
+  font-size: 13px;
+}
+
+.danger-button {
+  padding: 0 12px;
+  background: #fff1f0;
+  color: #b42318;
+}
+
+.danger-button.small {
   min-height: 34px;
   font-size: 13px;
 }
@@ -463,6 +476,33 @@ svg {
 .output-list {
   display: grid;
   gap: 12px;
+}
+
+.message,
+.empty-state {
+  border: 1px solid #d9e0ea;
+  background: #ffffff;
+  border-radius: 8px;
+  padding: 12px 14px;
+  color: #344054;
+}
+
+.success-message {
+  border-color: #abefc6;
+  background: #ecfdf3;
+  color: #067647;
+}
+
+.error-message {
+  border-color: #fecdca;
+  background: #fff1f0;
+  color: #b42318;
+}
+
+.empty-state {
+  background: #f8fafc;
+  color: #697586;
+  text-align: center;
 }
 
 .survey-card {
@@ -565,11 +605,29 @@ textarea {
   flex: 1;
 }
 
+.inline-check {
+  display: flex !important;
+  align-items: center;
+  gap: 10px;
+}
+
+.inline-check input {
+  width: 18px;
+  height: 18px;
+}
+
 .question-card {
   padding: 16px;
   display: grid;
   grid-template-columns: 40px minmax(0, 1fr);
   gap: 12px;
+}
+
+.row-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
 }
 
 .question-index {
@@ -686,7 +744,8 @@ th {
 
   .grid-2,
   .builder-grid,
-  .response-grid {
+  .response-grid,
+  .crud-grid {
     grid-template-columns: 1fr;
   }
 }

@@ -9,14 +9,16 @@ CREATE DATABASE IF NOT EXISTS edu_survey
 USE edu_survey;
 
 -- 1. Users: store all account types in one table.
--- role: admin, survey_creator, respondent
+-- role: admin, survey_creator, respondent, student
 -- stakeholder_group is only used for respondents.
 CREATE TABLE users (
   id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  student_code VARCHAR(20) UNIQUE,
   full_name VARCHAR(150) NOT NULL,
+  class_name VARCHAR(30),
   email VARCHAR(150) NOT NULL UNIQUE,
   password_hash VARCHAR(255) NOT NULL,
-  role ENUM('admin', 'survey_creator', 'respondent') NOT NULL DEFAULT 'respondent',
+  role ENUM('admin', 'survey_creator', 'respondent', 'student') NOT NULL DEFAULT 'student',
   stakeholder_group ENUM('student', 'lecturer', 'alumni', 'employer', 'staff') DEFAULT NULL,
   status ENUM('active', 'locked') NOT NULL DEFAULT 'active',
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -117,4 +119,4 @@ CREATE INDEX idx_answers_response ON answers(response_id);
 INSERT INTO users (full_name, email, password_hash, role, stakeholder_group) VALUES
 ('Quản trị viên', 'admin@example.com', '$2b$10$JXXWQsv1kvzW1TYcqCmE9u.tAUhWVi0NqHaPtRlII0/AVttD4rQZe', 'admin', 'staff'),
 ('Cán bộ khảo sát', 'creator@example.com', '$2b$10$JXXWQsv1kvzW1TYcqCmE9u.tAUhWVi0NqHaPtRlII0/AVttD4rQZe', 'survey_creator', 'staff'),
-('Người tham gia mẫu', 'student@example.com', '$2b$10$JXXWQsv1kvzW1TYcqCmE9u.tAUhWVi0NqHaPtRlII0/AVttD4rQZe', 'respondent', 'student');
+('Người tham gia mẫu', 'student@example.com', '$2b$10$JXXWQsv1kvzW1TYcqCmE9u.tAUhWVi0NqHaPtRlII0/AVttD4rQZe', 'student', 'student');

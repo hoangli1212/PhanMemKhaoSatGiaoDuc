@@ -6,7 +6,9 @@ import { query } from '../config/db.js'
 function sanitizeUser(user) {
   return {
     id: user.id,
+    student_code: user.student_code,
     full_name: user.full_name,
+    class_name: user.class_name,
     email: user.email,
     role: user.role,
     stakeholder_group: user.stakeholder_group,
@@ -19,6 +21,7 @@ function signToken(user) {
     {
       sub: user.id,
       email: user.email,
+      student_code: user.student_code,
       role: user.role,
     },
     process.env.JWT_SECRET || 'dev_secret_change_me',
@@ -29,20 +32,21 @@ function signToken(user) {
 }
 
 export async function login(req, res) {
-  const { email, password } = req.body
+  const { email, username, password } = req.body
+  const identifier = email || username
 
-  if (!email || !password) {
+  if (!identifier || !password) {
     return res.status(400).json({
-      message: 'Email and password are required',
+      message: 'Username/email and password are required',
     })
   }
 
   const rows = await query(
-    `SELECT id, full_name, email, password_hash, role, stakeholder_group, status
+    `SELECT id, student_code, full_name, class_name, email, password_hash, role, stakeholder_group, status
      FROM users
-     WHERE email = :email
+     WHERE email = :identifier OR student_code = :identifier
      LIMIT 1`,
-    { email },
+    { identifier },
   )
 
   if (rows.length === 0) {
