@@ -2,6 +2,7 @@ import cors from 'cors'
 import express from 'express'
 
 import healthRoutes from './routes/healthRoutes.js'
+import questionRoutes from './routes/questionRoutes.js'
 import surveyRoutes from './routes/surveyRoutes.js'
 
 const app = express()
@@ -10,6 +11,7 @@ app.use(cors())
 app.use(express.json())
 
 app.use('/health', healthRoutes)
+app.use('/api/questions', questionRoutes)
 app.use('/api/surveys', surveyRoutes)
 
 app.use((req, res) => {
