@@ -32,6 +32,17 @@ function normalizeAnswerRows(responseId, answers = []) {
   return rows
 }
 
+function canManageSurvey(user, survey) {
+  return user?.role === 'admin' || Number(survey?.creator_id) === Number(user?.id)
+}
+
+function hasAnswerForQuestion(answerRows, questionId) {
+  return answerRows.some((answer) => {
+    if (Number(answer.question_id) !== Number(questionId)) return false
+    return Boolean(answer.option_id || answer.answer_text || answer.rating_value)
+  })
+}
+
 export async function submitResponse(req, res) {
   const surveyId = Number(req.body.survey_id)
   const answers = Array.isArray(req.body.answers) ? req.body.answers : []
@@ -40,13 +51,54 @@ export async function submitResponse(req, res) {
     return res.status(400).json({ message: 'survey_id and answers are required' })
   }
 
-  const surveyRows = await query('SELECT id, status FROM surveys WHERE id = :id', { id: surveyId })
+  const surveyRows = await query(
+    `SELECT id, status, target_group
+     FROM surveys
+     WHERE id = :id`,
+    { id: surveyId },
+  )
   if (surveyRows.length === 0) {
     return res.status(404).json({ message: 'Survey not found' })
   }
 
-  if (surveyRows[0].status !== 'published') {
+  const survey = surveyRows[0]
+  const targetGroup = req.user?.stakeholder_group || 'student'
+  if (survey.status !== 'published') {
     return res.status(400).json({ message: 'Survey is not open for responses' })
+  }
+
+  if (![targetGroup, 'all'].includes(survey.target_group)) {
+    return res.status(403).json({ message: 'Survey is not available for this user' })
+  }
+
+  const submittedRows = await query(
+    `SELECT id FROM responses
+     WHERE survey_id = :surveyId AND respondent_id = :respondentId
+     LIMIT 1`,
+    {
+      surveyId,
+      respondentId: req.user.id,
+    },
+  )
+  if (submittedRows.length > 0) {
+    return res.status(409).json({ message: 'Survey has already been submitted' })
+  }
+
+  const questionRows = await query(
+    `SELECT id, is_required
+     FROM questions
+     WHERE survey_id = :surveyId`,
+    { surveyId },
+  )
+  const pendingAnswerRows = normalizeAnswerRows(0, answers)
+  const missingRequired = questionRows
+    .filter((question) => Boolean(question.is_required))
+    .filter((question) => !hasAnswerForQuestion(pendingAnswerRows, question.id))
+  if (missingRequired.length > 0) {
+    return res.status(400).json({
+      message: 'Required questions are missing answers',
+      question_ids: missingRequired.map((question) => question.id),
+    })
   }
 
   const connection = await pool.getConnection()
@@ -90,22 +142,36 @@ export async function submitResponse(req, res) {
 }
 
 export async function getResponseStats(req, res) {
-  const stats = await getStatsData()
+  const stats = await getStatsData(req.user)
 
   return res.json(stats)
 }
 
 export async function getSurveyStatsDetail(req, res) {
-  const detail = await getSurveyDetailData(req.params.surveyId)
+  const detail = await getSurveyDetailData(req.params.surveyId, req.user)
 
   if (!detail) {
     return res.status(404).json({ message: 'Survey not found' })
+  }
+  if (detail.permissionDenied) {
+    return res.status(403).json({ message: 'Permission denied' })
   }
 
   return res.json(detail)
 }
 
-async function getStatsData() {
+async function getStatsData(user) {
+  const params = {}
+  const whereParts = []
+  if (user?.role === 'survey_creator') {
+    whereParts.push('s.creator_id = :creator_id')
+    params.creator_id = user.id
+  }
+  const whereClause = whereParts.length ? `WHERE ${whereParts.join(' AND ')}` : ''
+  const choiceWhereParts = ["q.question_type IN ('single_choice', 'multiple_choice')", ...whereParts]
+  const ratingWhereParts = ["q.question_type = 'rating'", ...whereParts]
+  const choiceWhereClause = `WHERE ${choiceWhereParts.join(' AND ')}`
+  const ratingWhereClause = `WHERE ${ratingWhereParts.join(' AND ')}`
   const surveyRows = await query(
     `SELECT
        s.id,
@@ -113,12 +179,15 @@ async function getStatsData() {
        s.status,
        s.target_group,
        COUNT(DISTINCT q.id) AS question_count,
-       COUNT(DISTINCT r.id) AS response_count
+       COUNT(DISTINCT r.id) AS response_count,
+       (SELECT COUNT(*) FROM users WHERE role = 'student' AND status = 'active') AS total_students
      FROM surveys s
      LEFT JOIN questions q ON q.survey_id = s.id
      LEFT JOIN responses r ON r.survey_id = s.id
+     ${whereClause}
      GROUP BY s.id
      ORDER BY s.created_at DESC`,
+    params,
   )
 
   const optionRows = await query(
@@ -131,11 +200,13 @@ async function getStatsData() {
        qo.option_text,
        COUNT(a.id) AS selected_count
      FROM questions q
+     JOIN surveys s ON s.id = q.survey_id
      LEFT JOIN question_options qo ON qo.question_id = q.id
      LEFT JOIN answers a ON a.question_id = q.id AND a.option_id = qo.id
-     WHERE q.question_type IN ('single_choice', 'multiple_choice')
+     ${choiceWhereClause}
      GROUP BY q.id, qo.id
      ORDER BY q.survey_id ASC, q.sort_order ASC, qo.sort_order ASC`,
+    params,
   )
 
   const ratingRows = await query(
@@ -146,10 +217,12 @@ async function getStatsData() {
        AVG(a.rating_value) AS average_rating,
        COUNT(a.rating_value) AS rating_count
      FROM questions q
+     JOIN surveys s ON s.id = q.survey_id
      LEFT JOIN answers a ON a.question_id = q.id
-     WHERE q.question_type = 'rating'
+     ${ratingWhereClause}
      GROUP BY q.id
      ORDER BY q.survey_id ASC, q.sort_order ASC`,
+    params,
   )
 
   return {
@@ -160,7 +233,7 @@ async function getStatsData() {
 }
 
 export async function exportStatsExcel(req, res) {
-  const stats = await getStatsData()
+  const stats = await getStatsData(req.user)
 
   const workbook = xlsx.utils.book_new()
   const surveyRows = stats.surveys.map((survey) => ({
@@ -168,6 +241,7 @@ export async function exportStatsExcel(req, res) {
     'Tên khảo sát': survey.title,
     'Đối tượng': survey.target_group,
     'Số câu hỏi': survey.question_count,
+    'Tổng sinh viên': survey.total_students,
     'Số phản hồi': survey.response_count,
     'Trạng thái': survey.status,
   }))
@@ -201,7 +275,7 @@ export async function exportStatsExcel(req, res) {
   return res.send(buffer)
 }
 
-async function getSurveyDetailData(surveyId) {
+async function getSurveyDetailData(surveyId, user) {
   const surveyRows = await query(
     `SELECT
        s.id,
@@ -221,6 +295,9 @@ async function getSurveyDetailData(surveyId) {
   if (surveyRows.length === 0) return null
 
   const survey = surveyRows[0]
+  if (!canManageSurvey(user, survey)) {
+    return { permissionDenied: true }
+  }
   const studentRows = await query(
     `SELECT id, student_code, full_name, class_name, email
      FROM users
@@ -328,10 +405,13 @@ async function getSurveyDetailData(surveyId) {
 }
 
 export async function exportSurveyDetailExcel(req, res) {
-  const detail = await getSurveyDetailData(req.params.surveyId)
+  const detail = await getSurveyDetailData(req.params.surveyId, req.user)
 
   if (!detail) {
     return res.status(404).json({ message: 'Survey not found' })
+  }
+  if (detail.permissionDenied) {
+    return res.status(403).json({ message: 'Permission denied' })
   }
 
   const workbook = xlsx.utils.book_new()

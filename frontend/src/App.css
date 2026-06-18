@@ -1247,6 +1247,66 @@ td small {
   font-size: 16px;
 }
 
+.completion-box {
+  display: grid;
+  gap: 10px;
+}
+
+.completion-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.completion-head strong {
+  font-size: 28px;
+  color: #16735e;
+}
+
+.completion-head span {
+  color: #6f756f;
+}
+
+.completion-track,
+.chart-track {
+  height: 12px;
+  border-radius: 999px;
+  background: #e6e2d8;
+  overflow: hidden;
+}
+
+.completion-track i,
+.chart-track i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #16735e;
+}
+
+.chart-list {
+  display: grid;
+  gap: 12px;
+}
+
+.chart-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.8fr) minmax(160px, 1fr) 52px;
+  align-items: center;
+  gap: 12px;
+}
+
+.chart-row span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #344054;
+}
+
+.chart-row b {
+  color: #16735e;
+}
+
 .detail-page-header {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
@@ -1322,7 +1382,8 @@ fieldset {
   }
 
   .detail-grid,
-  .metric-grid.compact {
+  .metric-grid.compact,
+  .chart-row {
     grid-template-columns: 1fr;
   }
 }

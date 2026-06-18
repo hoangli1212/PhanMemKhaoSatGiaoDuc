@@ -968,7 +968,14 @@ function AnswerSurvey({ surveys, onChanged, onNotify }) {
         <div className="survey-list">
           {openSurveyPages.pageItems.map((survey) => (
             <SurveyCard key={survey.id} survey={survey}>
-              <button className="primary-button small" onClick={() => loadSurvey(survey.id)}>Trả lời</button>
+              {survey.is_completed ? <span className="status">Đã hoàn thành</span> : null}
+              <button
+                className="primary-button small"
+                onClick={() => loadSurvey(survey.id)}
+                disabled={Boolean(survey.is_completed)}
+              >
+                {survey.is_completed ? "Đã nộp" : "Trả lời"}
+              </button>
             </SurveyCard>
           ))}
           {filteredOpenSurveys.length === 0 && <EmptyState text="Hiện chưa có khảo sát đang mở." />}
@@ -1252,6 +1259,12 @@ function Reports({ stats, surveys, questions }) {
               <Metric icon="chart" label="Chưa hoàn thành" value={detail.summary.incomplete_students} />
               <Metric icon="question" label="Câu hỏi" value={detail.summary.question_count} />
             </div>
+            <Panel title="Tỷ lệ hoàn thành">
+              <CompletionBar
+                completed={detail.summary.completed_students}
+                total={detail.summary.total_students}
+              />
+            </Panel>
 
             <div className="detail-grid">
               <Panel title="Sinh viên chưa hoàn thành">
@@ -1344,6 +1357,24 @@ function Reports({ stats, surveys, questions }) {
         {filteredStats.length === 0 && <EmptyState text="Chưa có dữ liệu thống kê phù hợp." />}
         <Pagination page={reportPages.page} totalPages={reportPages.totalPages} onPageChange={reportPages.setPage} />
       </Panel>
+      <Panel title="Biểu đồ phản hồi">
+        <div className="chart-list">
+          {surveyStats.slice(0, 8).map((survey) => {
+            const totalStudents = Number(survey.total_students || 0);
+            const responseCount = Number(survey.response_count || 0);
+            const percent = totalStudents ? Math.round((responseCount / totalStudents) * 100) : 0;
+            return (
+              <div className="chart-row" key={survey.id}>
+                <span>{survey.title}</span>
+                <div className="chart-track">
+                  <i style={{ width: `${Math.min(percent, 100)}%` }} />
+                </div>
+                <b>{responseCount}</b>
+              </div>
+            );
+          })}
+        </div>
+      </Panel>
     </div>
   );
 }
@@ -1381,6 +1412,21 @@ function Panel({ title, children }) {
       <div className="panel-header"><h2>{title}</h2></div>
       {children}
     </section>
+  );
+}
+
+function CompletionBar({ completed, total }) {
+  const percent = total ? Math.round((Number(completed) / Number(total)) * 100) : 0;
+  return (
+    <div className="completion-box">
+      <div className="completion-head">
+        <strong>{percent}%</strong>
+        <span>{completed}/{total} sinh viên đã hoàn thành</span>
+      </div>
+      <div className="completion-track">
+        <i style={{ width: `${Math.min(percent, 100)}%` }} />
+      </div>
+    </div>
   );
 }
 

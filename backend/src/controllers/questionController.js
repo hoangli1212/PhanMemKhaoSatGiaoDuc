@@ -57,14 +57,47 @@ async function getQuestionWithOptions(id) {
   }
 }
 
+async function getSurveyForQuestion(questionId) {
+  const rows = await query(
+    `SELECT s.id, s.creator_id
+     FROM questions q
+     JOIN surveys s ON s.id = q.survey_id
+     WHERE q.id = :questionId`,
+    { questionId },
+  )
+  return rows[0] || null
+}
+
+async function getSurveyById(surveyId) {
+  const rows = await query('SELECT id, creator_id FROM surveys WHERE id = :surveyId', { surveyId })
+  return rows[0] || null
+}
+
+function canManageSurvey(user, survey) {
+  return user?.role === 'admin' || Number(survey?.creator_id) === Number(user?.id)
+}
+
 export async function getQuestions(req, res) {
   const params = {}
-  let whereClause = ''
+  const whereParts = []
 
   if (req.query.survey_id) {
-    whereClause = 'WHERE q.survey_id = :survey_id'
+    whereParts.push('q.survey_id = :survey_id')
     params.survey_id = req.query.survey_id
   }
+
+  if (req.user?.role === 'survey_creator') {
+    whereParts.push('s.creator_id = :creator_id')
+    params.creator_id = req.user.id
+  }
+
+  if (['student', 'respondent'].includes(req.user?.role)) {
+    whereParts.push("s.status = 'published'")
+    whereParts.push('(s.target_group = :target_group OR s.target_group = "all")')
+    params.target_group = req.user.stakeholder_group || 'student'
+  }
+
+  const whereClause = whereParts.length ? `WHERE ${whereParts.join(' AND ')}` : ''
 
   const rows = await query(
     `SELECT
@@ -94,6 +127,11 @@ export async function getQuestionById(req, res) {
     return res.status(404).json({ message: 'Question not found' })
   }
 
+  const survey = await getSurveyForQuestion(req.params.id)
+  if (req.user?.role === 'survey_creator' && !canManageSurvey(req.user, survey)) {
+    return res.status(403).json({ message: 'Permission denied' })
+  }
+
   return res.json(question)
 }
 
@@ -104,6 +142,14 @@ export async function createQuestion(req, res) {
   }
 
   const options = normalizeOptions(req.body.options)
+  const survey = await getSurveyById(req.body.survey_id)
+  if (!survey) {
+    return res.status(404).json({ message: 'Survey not found' })
+  }
+  if (!canManageSurvey(req.user, survey)) {
+    return res.status(403).json({ message: 'Permission denied' })
+  }
+
   const connection = await pool.getConnection()
 
   try {
@@ -159,6 +205,21 @@ export async function updateQuestion(req, res) {
   }
 
   const current = currentRows[0]
+  const currentSurvey = await getSurveyForQuestion(req.params.id)
+  if (!canManageSurvey(req.user, currentSurvey)) {
+    return res.status(403).json({ message: 'Permission denied' })
+  }
+
+  if (req.body.survey_id !== undefined) {
+    const targetSurvey = await getSurveyById(req.body.survey_id)
+    if (!targetSurvey) {
+      return res.status(404).json({ message: 'Survey not found' })
+    }
+    if (!canManageSurvey(req.user, targetSurvey)) {
+      return res.status(403).json({ message: 'Permission denied' })
+    }
+  }
+
   const options = req.body.options !== undefined ? normalizeOptions(req.body.options) : null
   const connection = await pool.getConnection()
 
@@ -215,6 +276,14 @@ export async function updateQuestion(req, res) {
 }
 
 export async function deleteQuestion(req, res) {
+  const survey = await getSurveyForQuestion(req.params.id)
+  if (!survey) {
+    return res.status(404).json({ message: 'Question not found' })
+  }
+  if (!canManageSurvey(req.user, survey)) {
+    return res.status(403).json({ message: 'Permission denied' })
+  }
+
   const result = await query('DELETE FROM questions WHERE id = :id', { id: req.params.id })
 
   if (result.affectedRows === 0) {
