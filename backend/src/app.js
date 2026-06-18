@@ -4,7 +4,9 @@ import express from 'express'
 import authRoutes from './routes/authRoutes.js'
 import healthRoutes from './routes/healthRoutes.js'
 import questionRoutes from './routes/questionRoutes.js'
+import responseRoutes from './routes/responseRoutes.js'
 import surveyRoutes from './routes/surveyRoutes.js'
+import userRoutes from './routes/userRoutes.js'
 
 const app = express()
 
@@ -14,7 +16,9 @@ app.use(express.json())
 app.use('/health', healthRoutes)
 app.use('/api/auth', authRoutes)
 app.use('/api/questions', questionRoutes)
+app.use('/api/responses', responseRoutes)
 app.use('/api/surveys', surveyRoutes)
+app.use('/api/users', userRoutes)
 
 app.use((req, res) => {
   res.status(404).json({

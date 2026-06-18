@@ -4,23 +4,27 @@ import "./App.css";
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:3000/api";
 
-const navItems = [
-  { id: "dashboard", label: "Tổng quan", icon: "dashboard" },
-  { id: "surveys", label: "Khảo sát", icon: "survey" },
-  { id: "questions", label: "Câu hỏi", icon: "question" },
-  { id: "reports", label: "Thống kê", icon: "chart" },
-];
+const emptyUser = {
+  full_name: "",
+  student_code: "",
+  class_name: "",
+  email: "",
+  password: "",
+  role: "student",
+  stakeholder_group: "student",
+  status: "active",
+};
 
-const emptySurveyForm = {
+const emptySurvey = {
   title: "",
   description: "",
-  target_group: "all",
+  target_group: "student",
   start_date: "",
   end_date: "",
   status: "draft",
 };
 
-const emptyQuestionForm = {
+const emptyQuestion = {
   survey_id: "",
   content: "",
   question_type: "text",
@@ -29,9 +33,73 @@ const emptyQuestionForm = {
   optionsText: "",
 };
 
-function formatDateInput(value) {
-  if (!value) return "";
-  return String(value).slice(0, 10);
+function getNavItems(role) {
+  if (role === "admin") {
+    return [
+      { id: "dashboard", label: "Tổng quan", icon: "dashboard" },
+      { id: "users", label: "Người dùng", icon: "users" },
+      { id: "surveys", label: "Khảo sát", icon: "survey" },
+      { id: "questions", label: "Câu hỏi", icon: "question" },
+      { id: "reports", label: "Thống kê", icon: "chart" },
+    ];
+  }
+
+  if (role === "survey_creator") {
+    return [
+      { id: "dashboard", label: "Tổng quan", icon: "dashboard" },
+      { id: "surveys", label: "Khảo sát", icon: "survey" },
+      { id: "questions", label: "Câu hỏi", icon: "question" },
+      { id: "reports", label: "Thống kê", icon: "chart" },
+    ];
+  }
+
+  return [
+    { id: "dashboard", label: "Tổng quan", icon: "dashboard" },
+    { id: "answer", label: "Trả lời khảo sát", icon: "check" },
+  ];
+}
+
+function roleLabel(role) {
+  return {
+    admin: "Admin / Quản trị viên",
+    survey_creator: "Cán bộ khảo sát",
+    respondent: "Người tham gia khảo sát",
+    student: "Sinh viên",
+  }[role] || role;
+}
+
+function statusLabel(status) {
+  return {
+    draft: "Bản nháp",
+    published: "Đang mở",
+    closed: "Đã đóng",
+    active: "Hoạt động",
+    locked: "Đã khóa",
+  }[status] || status;
+}
+
+function groupLabel(group) {
+  return {
+    all: "Tất cả",
+    student: "Sinh viên",
+    lecturer: "Giảng viên",
+    alumni: "Cựu sinh viên",
+    employer: "Nhà tuyển dụng",
+    staff: "Nhân viên",
+  }[group] || group;
+}
+
+function questionTypeLabel(type) {
+  return {
+    text: "Tự luận",
+    rating: "Thang điểm",
+    single_choice: "Một lựa chọn",
+    multiple_choice: "Nhiều lựa chọn",
+  }[type] || type;
+}
+
+function formatDate(value) {
+  return value ? String(value).slice(0, 10) : "";
 }
 
 async function apiRequest(path, options = {}) {
@@ -56,8 +124,6 @@ async function apiRequest(path, options = {}) {
 }
 
 function App() {
-  const [activePage, setActivePage] = useState("dashboard");
-  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [auth, setAuth] = useState(() => {
     const token = localStorage.getItem("authToken");
     const user = localStorage.getItem("authUser");
@@ -66,76 +132,78 @@ function App() {
     try {
       return { token, user: JSON.parse(user) };
     } catch {
-      localStorage.removeItem("authToken");
-      localStorage.removeItem("authUser");
+      localStorage.clear();
       return null;
     }
   });
-
+  const [activePage, setActivePage] = useState("dashboard");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [surveys, setSurveys] = useState([]);
   const [questions, setQuestions] = useState([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [message, setMessage] = useState("");
+  const [users, setUsers] = useState([]);
+  const [stats, setStats] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
 
-  const title = useMemo(() => {
-    return navItems.find((item) => item.id === activePage)?.label || "Tổng quan";
-  }, [activePage]);
+  const navItems = useMemo(() => getNavItems(auth?.user.role), [auth]);
+  const title = navItems.find((item) => item.id === activePage)?.label || "Tổng quan";
 
-  const loadData = async () => {
+  async function loadData() {
     if (!auth) return;
 
-    setIsLoading(true);
+    setLoading(true);
     setError("");
-
     try {
-      const [surveyRows, questionRows] = await Promise.all([
-        apiRequest("/surveys"),
-        apiRequest("/questions"),
-      ]);
+      const tasks = [apiRequest("/surveys"), apiRequest("/questions")];
+      if (auth.user.role === "admin") tasks.push(apiRequest("/users"));
+      if (["admin", "survey_creator"].includes(auth.user.role)) {
+        tasks.push(apiRequest("/responses/stats"));
+      }
+
+      const [surveyRows, questionRows, third, fourth] = await Promise.all(tasks);
       setSurveys(surveyRows);
       setQuestions(questionRows);
+
+      if (auth.user.role === "admin") {
+        setUsers(third);
+        setStats(fourth || null);
+      } else if (auth.user.role === "survey_creator") {
+        setStats(third || null);
+      }
     } catch (err) {
       setError(err.message || "Không thể tải dữ liệu");
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
-  };
+  }
 
   useEffect(() => {
-    // Data must be loaded after login or page refresh with stored auth.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [auth]);
 
-  const goTo = (page) => {
-    setActivePage(page);
-    setSidebarOpen(false);
-  };
+  function notify(text) {
+    setNotice(text);
+    window.setTimeout(() => setNotice(""), 2500);
+  }
 
-  const handleLogin = (loginResult) => {
-    localStorage.setItem("authToken", loginResult.token);
-    localStorage.setItem("authUser", JSON.stringify(loginResult.user));
-    setAuth(loginResult);
-  };
+  function handleLogin(result) {
+    localStorage.setItem("authToken", result.token);
+    localStorage.setItem("authUser", JSON.stringify(result.user));
+    setAuth(result);
+    setActivePage("dashboard");
+  }
 
-  const handleLogout = () => {
+  function handleLogout() {
     localStorage.removeItem("authToken");
     localStorage.removeItem("authUser");
     setAuth(null);
     setActivePage("dashboard");
-    setSidebarOpen(false);
-  };
-
-  const notify = (text) => {
-    setMessage(text);
-    window.setTimeout(() => setMessage(""), 2500);
-  };
-
-  if (!auth) {
-    return <LoginScreen onLogin={handleLogin} />;
   }
+
+  if (!auth) return <LoginScreen onLogin={handleLogin} />;
 
   return (
     <div className="app-shell">
@@ -144,23 +212,22 @@ function App() {
           <div className="brand-mark">KS</div>
           <div>
             <strong>EduSurvey</strong>
-            <span>Hệ thống khảo sát giáo dục</span>
+            <span>Khảo sát giáo dục</span>
           </div>
-          <button
-            className="icon-button close-button"
-            onClick={() => setSidebarOpen(false)}
-            aria-label="Đóng menu"
-          >
+          <button className="icon-button close-button" onClick={() => setSidebarOpen(false)}>
             <Icon name="close" />
           </button>
         </div>
 
-        <nav className="nav-list" aria-label="Điều hướng chính">
+        <nav className="nav-list">
           {navItems.map((item) => (
             <button
               key={item.id}
               className={`nav-item ${activePage === item.id ? "active" : ""}`}
-              onClick={() => goTo(item.id)}
+              onClick={() => {
+                setActivePage(item.id);
+                setSidebarOpen(false);
+              }}
             >
               <Icon name={item.icon} />
               <span>{item.label}</span>
@@ -169,74 +236,53 @@ function App() {
         </nav>
 
         <div className="role-box">
-          <label>Người dùng</label>
+          <label>Tác nhân hiện tại</label>
           <strong>{auth.user.full_name}</strong>
-          <p>{auth.user.role}</p>
+          <p>{roleLabel(auth.user.role)}</p>
         </div>
       </aside>
 
-      {sidebarOpen && (
-        <button
-          className="scrim"
-          onClick={() => setSidebarOpen(false)}
-          aria-label="Đóng menu"
-        />
-      )}
+      {sidebarOpen && <button className="scrim" onClick={() => setSidebarOpen(false)} />}
 
       <main className="main">
         <header className="topbar">
-          <button
-            className="icon-button menu-button"
-            onClick={() => setSidebarOpen(true)}
-            aria-label="Mở menu"
-          >
+          <button className="icon-button menu-button" onClick={() => setSidebarOpen(true)}>
             <Icon name="menu" />
           </button>
           <div className="page-title">
-            <span>Phần mềm khảo sát lấy ý kiến các bên liên quan</span>
+            <span>Hệ thống khảo sát theo 3 tác nhân Use Case</span>
             <h1>{title}</h1>
           </div>
           <button className="secondary-button" onClick={loadData}>
-            Tải lại dữ liệu
+            Tải lại
           </button>
-          <button className="primary-button" onClick={() => goTo("surveys")}>
-            <Icon name="plus" />
-            Tạo khảo sát
+          <button className="secondary-button" onClick={handleLogout}>
+            Đăng xuất
           </button>
-          <div className="account-box">
-            <span>{auth.user.full_name}</span>
-            <button className="secondary-button small" onClick={handleLogout}>
-              Đăng xuất
-            </button>
-          </div>
         </header>
 
         <section className="content">
+          {loading && <div className="message">Đang tải dữ liệu...</div>}
           {error && <div className="message error-message">{error}</div>}
-          {message && <div className="message success-message">{message}</div>}
-          {isLoading && <div className="message">Đang tải dữ liệu...</div>}
+          {notice && <div className="message success-message">{notice}</div>}
 
           {activePage === "dashboard" && (
-            <Dashboard surveys={surveys} questions={questions} onNavigate={goTo} />
+            <Dashboard auth={auth} surveys={surveys} questions={questions} users={users} stats={stats} />
           )}
-          {activePage === "surveys" && (
-            <SurveyCrud
-              auth={auth}
-              surveys={surveys}
-              onChanged={loadData}
-              onNotify={notify}
-            />
+          {activePage === "users" && auth.user.role === "admin" && (
+            <UserManager users={users} onChanged={loadData} onNotify={notify} />
           )}
-          {activePage === "questions" && (
-            <QuestionCrud
-              surveys={surveys}
-              questions={questions}
-              onChanged={loadData}
-              onNotify={notify}
-            />
+          {activePage === "surveys" && ["admin", "survey_creator"].includes(auth.user.role) && (
+            <SurveyManager auth={auth} surveys={surveys} onChanged={loadData} onNotify={notify} />
           )}
-          {activePage === "reports" && (
-            <Reports surveys={surveys} questions={questions} />
+          {activePage === "questions" && ["admin", "survey_creator"].includes(auth.user.role) && (
+            <QuestionManager surveys={surveys} questions={questions} onChanged={loadData} onNotify={notify} />
+          )}
+          {activePage === "reports" && ["admin", "survey_creator"].includes(auth.user.role) && (
+            <Reports stats={stats} surveys={surveys} questions={questions} />
+          )}
+          {activePage === "answer" && ["student", "respondent"].includes(auth.user.role) && (
+            <AnswerSurvey surveys={surveys} onChanged={loadData} onNotify={notify} />
           )}
         </section>
       </main>
@@ -247,26 +293,25 @@ function App() {
 function LoginScreen({ onLogin }) {
   const [username, setUsername] = useState("admin@example.com");
   const [password, setPassword] = useState("123456");
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
-  const handleSubmit = async (event) => {
+  async function submit(event) {
     event.preventDefault();
     setError("");
-    setIsSubmitting(true);
-
+    setSubmitting(true);
     try {
-      const data = await apiRequest("/auth/login", {
+      const result = await apiRequest("/auth/login", {
         method: "POST",
         body: JSON.stringify({ username, password }),
       });
-      onLogin(data);
+      onLogin(result);
     } catch (err) {
       setError(err.message || "Không thể đăng nhập");
     } finally {
-      setIsSubmitting(false);
+      setSubmitting(false);
     }
-  };
+  }
 
   return (
     <main className="login-page">
@@ -275,122 +320,168 @@ function LoginScreen({ onLogin }) {
           <div className="brand-mark">KS</div>
           <div>
             <strong>EduSurvey</strong>
-            <span>Hệ thống khảo sát giáo dục</span>
+            <span>Phần mềm khảo sát lấy ý kiến trong giáo dục</span>
           </div>
         </div>
-
-        <div className="login-copy">
-          <h1>Đăng nhập hệ thống</h1>
-          <p>Nhập email hoặc mã sinh viên để truy cập hệ thống.</p>
-        </div>
-
-        <form className="login-form" onSubmit={handleSubmit}>
+        <h1>Đăng nhập hệ thống</h1>
+        <p>Admin, cán bộ khảo sát và sinh viên dùng cùng một màn hình đăng nhập.</p>
+        <form className="form-grid" onSubmit={submit}>
           <label>
-            Tên đăng nhập hoặc email
-            <input
-              type="text"
-              value={username}
-              onChange={(event) => setUsername(event.target.value)}
-              autoComplete="username"
-              required
-            />
+            Email hoặc mã sinh viên
+            <input value={username} onChange={(event) => setUsername(event.target.value)} />
           </label>
-
           <label>
             Mật khẩu
-            <input
-              type="password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              autoComplete="current-password"
-              required
-            />
+            <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
           </label>
-
           {error && <div className="login-error">{error}</div>}
-
-          <button className="primary-button" type="submit" disabled={isSubmitting}>
-            {isSubmitting ? "Đang đăng nhập..." : "Đăng nhập"}
+          <button className="primary-button" disabled={submitting}>
+            {submitting ? "Đang đăng nhập..." : "Đăng nhập"}
           </button>
         </form>
-
         <div className="demo-account">
           <strong>Tài khoản mẫu</strong>
-          <span>admin@example.com / 123456</span>
-          <span>creator@example.com / 123456</span>
-          <span>2251220277 / 01/01/2004</span>
+          <span>Admin: admin@example.com / 123456</span>
+          <span>Cán bộ khảo sát: creator@example.com / 123456</span>
+          <span>Sinh viên: 2251220277 / 01/01/2004</span>
         </div>
       </section>
     </main>
   );
 }
 
-function Dashboard({ surveys, questions, onNavigate }) {
-  const publishedSurveys = surveys.filter((survey) => survey.status === "published");
-  const closedSurveys = surveys.filter((survey) => survey.status === "closed");
+function Dashboard({ auth, surveys, questions, users, stats }) {
+  const responseCount = stats?.surveys?.reduce((sum, survey) => sum + Number(survey.response_count || 0), 0) || 0;
 
   return (
     <div className="screen-stack">
       <div className="metric-grid">
-        <Metric icon="survey" label="Tổng khảo sát" value={surveys.length} note="Dữ liệu từ bảng surveys" />
-        <Metric icon="check" label="Đang mở" value={publishedSurveys.length} note="status = published" />
-        <Metric icon="question" label="Câu hỏi" value={questions.length} note="Dữ liệu từ bảng questions" />
-        <Metric icon="report" label="Đã đóng" value={closedSurveys.length} note="status = closed" />
+        <Metric icon="survey" label="Khảo sát" value={surveys.length} />
+        <Metric icon="question" label="Câu hỏi" value={questions.length} />
+        <Metric icon="check" label="Phản hồi" value={responseCount} />
+        <Metric icon="users" label="Người dùng" value={auth.user.role === "admin" ? users.length : "-"} />
       </div>
 
-      <div className="grid-2">
-        <Panel title="Khảo sát mới nhất" action="Quản lý" onAction={() => onNavigate("surveys")}>
-          <div className="survey-list">
-            {surveys.slice(0, 4).map((survey) => (
-              <SurveyCard key={survey.id} survey={survey} />
-            ))}
-            {surveys.length === 0 && <EmptyState text="Chưa có khảo sát trong database." />}
-          </div>
-        </Panel>
-
-        <Panel title="Câu hỏi theo loại">
-          <div className="bar-list">
-            {["text", "rating", "single_choice", "multiple_choice"].map((type) => {
-              const count = questions.filter((question) => question.question_type === type).length;
-              const percent = questions.length ? Math.round((count / questions.length) * 100) : 0;
-              return (
-                <div className="bar-row" key={type}>
-                  <span>{questionTypeLabel(type)}</span>
-                  <div><i style={{ width: `${percent}%` }} /></div>
-                  <b>{count}</b>
-                </div>
-              );
-            })}
-          </div>
-        </Panel>
-      </div>
+      <Panel title="Luồng hoạt động chính">
+        <div className="workflow">
+          <article><Icon name="users" /><strong>Admin</strong><span>Quản lý tài khoản và phân quyền.</span></article>
+          <article><Icon name="survey" /><strong>Cán bộ khảo sát</strong><span>Tạo khảo sát, câu hỏi và mở khảo sát.</span></article>
+          <article><Icon name="check" /><strong>Người tham gia</strong><span>Đăng nhập, trả lời và gửi phản hồi.</span></article>
+          <article><Icon name="chart" /><strong>Hệ thống</strong><span>Lưu phản hồi và thống kê kết quả.</span></article>
+        </div>
+      </Panel>
     </div>
   );
 }
 
-function SurveyCrud({ auth, surveys, onChanged, onNotify }) {
+function UserManager({ users, onChanged, onNotify }) {
+  const [form, setForm] = useState(emptyUser);
   const [editingId, setEditingId] = useState(null);
-  const [form, setForm] = useState(emptySurveyForm);
-  const isEditing = Boolean(editingId);
 
-  const resetForm = () => {
+  function edit(user) {
+    setEditingId(user.id);
+    setForm({ ...emptyUser, ...user, password: "" });
+  }
+
+  async function submit(event) {
+    event.preventDefault();
+    const payload = { ...form };
+    if (editingId && !payload.password) delete payload.password;
+
+    await apiRequest(editingId ? `/users/${editingId}` : "/users", {
+      method: editingId ? "PUT" : "POST",
+      body: JSON.stringify(payload),
+    });
+
+    setForm(emptyUser);
     setEditingId(null);
-    setForm(emptySurveyForm);
-  };
+    onNotify(editingId ? "Đã cập nhật người dùng." : "Đã tạo người dùng.");
+    onChanged();
+  }
 
-  const editSurvey = (survey) => {
+  async function remove(user) {
+    if (!window.confirm(`Xóa người dùng "${user.full_name}"?`)) return;
+    await apiRequest(`/users/${user.id}`, { method: "DELETE" });
+    onNotify("Đã xóa người dùng.");
+    onChanged();
+  }
+
+  return (
+    <div className="crud-grid">
+      <Panel title={editingId ? "Cập nhật người dùng" : "Thêm người dùng"}>
+        <form className="form-grid" onSubmit={submit}>
+          <label>Họ tên<input value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} required /></label>
+          <div className="field-row">
+            <label>Mã sinh viên<input value={form.student_code || ""} onChange={(e) => setForm({ ...form, student_code: e.target.value })} /></label>
+            <label>Lớp<input value={form.class_name || ""} onChange={(e) => setForm({ ...form, class_name: e.target.value })} /></label>
+          </div>
+          <label>Email<input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required /></label>
+          <label>Mật khẩu<input type="password" value={form.password || ""} onChange={(e) => setForm({ ...form, password: e.target.value })} required={!editingId} /></label>
+          <div className="field-row">
+            <label>Vai trò
+              <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
+                <option value="admin">Admin</option>
+                <option value="survey_creator">Cán bộ khảo sát</option>
+                <option value="student">Sinh viên</option>
+                <option value="respondent">Người tham gia</option>
+              </select>
+            </label>
+            <label>Trạng thái
+              <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
+                <option value="active">Hoạt động</option>
+                <option value="locked">Khóa</option>
+              </select>
+            </label>
+          </div>
+          <div className="form-actions">
+            <button className="primary-button">{editingId ? "Lưu cập nhật" : "Thêm người dùng"}</button>
+            {editingId && <button type="button" className="secondary-button" onClick={() => { setEditingId(null); setForm(emptyUser); }}>Hủy</button>}
+          </div>
+        </form>
+      </Panel>
+
+      <Panel title="Danh sách người dùng">
+        <div className="table-wrap">
+          <table>
+            <thead><tr><th>Họ tên</th><th>Tài khoản</th><th>Vai trò</th><th>Trạng thái</th><th></th></tr></thead>
+            <tbody>
+              {users.map((user) => (
+                <tr key={user.id}>
+                  <td>{user.full_name}<br /><small>{user.class_name || ""}</small></td>
+                  <td>{user.student_code || user.email}</td>
+                  <td>{roleLabel(user.role)}</td>
+                  <td>{statusLabel(user.status)}</td>
+                  <td className="row-actions">
+                    <button className="secondary-button small" onClick={() => edit(user)}>Sửa</button>
+                    <button className="danger-button small" onClick={() => remove(user)}>Xóa</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Panel>
+    </div>
+  );
+}
+
+function SurveyManager({ auth, surveys, onChanged, onNotify }) {
+  const [form, setForm] = useState(emptySurvey);
+  const [editingId, setEditingId] = useState(null);
+
+  function edit(survey) {
     setEditingId(survey.id);
     setForm({
       title: survey.title || "",
       description: survey.description || "",
-      target_group: survey.target_group || "all",
-      start_date: formatDateInput(survey.start_date),
-      end_date: formatDateInput(survey.end_date),
+      target_group: survey.target_group || "student",
+      start_date: formatDate(survey.start_date),
+      end_date: formatDate(survey.end_date),
       status: survey.status || "draft",
     });
-  };
+  }
 
-  const submitSurvey = async (event) => {
+  async function submit(event) {
     event.preventDefault();
     const payload = {
       ...form,
@@ -399,71 +490,42 @@ function SurveyCrud({ auth, surveys, onChanged, onNotify }) {
       end_date: form.end_date || null,
     };
 
-    if (isEditing) {
-      await apiRequest(`/surveys/${editingId}`, {
-        method: "PUT",
-        body: JSON.stringify(payload),
-      });
-      onNotify("Đã cập nhật khảo sát.");
-    } else {
-      await apiRequest("/surveys", {
-        method: "POST",
-        body: JSON.stringify(payload),
-      });
-      onNotify("Đã tạo khảo sát.");
-    }
+    await apiRequest(editingId ? `/surveys/${editingId}` : "/surveys", {
+      method: editingId ? "PUT" : "POST",
+      body: JSON.stringify(payload),
+    });
 
-    resetForm();
+    setForm(emptySurvey);
+    setEditingId(null);
+    onNotify(editingId ? "Đã cập nhật khảo sát." : "Đã tạo khảo sát.");
     onChanged();
-  };
+  }
 
-  const deleteSurvey = async (survey) => {
+  async function remove(survey) {
     if (!window.confirm(`Xóa khảo sát "${survey.title}"?`)) return;
     await apiRequest(`/surveys/${survey.id}`, { method: "DELETE" });
     onNotify("Đã xóa khảo sát.");
-    if (editingId === survey.id) resetForm();
     onChanged();
-  };
+  }
 
   return (
     <div className="crud-grid">
-      <Panel title={isEditing ? "Cập nhật khảo sát" : "Tạo khảo sát"}>
-        <form className="form-grid" onSubmit={submitSurvey}>
-          <label>
-            Tên khảo sát
-            <input
-              value={form.title}
-              onChange={(event) => setForm({ ...form, title: event.target.value })}
-              required
-            />
-          </label>
-          <label>
-            Mô tả
-            <textarea
-              value={form.description}
-              onChange={(event) => setForm({ ...form, description: event.target.value })}
-            />
-          </label>
+      <Panel title={editingId ? "Cập nhật khảo sát" : "Tạo khảo sát"}>
+        <form className="form-grid" onSubmit={submit}>
+          <label>Tên khảo sát<input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} required /></label>
+          <label>Mô tả<textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></label>
           <div className="field-row">
-            <label>
-              Nhóm đối tượng
-              <select
-                value={form.target_group}
-                onChange={(event) => setForm({ ...form, target_group: event.target.value })}
-              >
-                <option value="all">Tất cả</option>
+            <label>Đối tượng
+              <select value={form.target_group} onChange={(e) => setForm({ ...form, target_group: e.target.value })}>
                 <option value="student">Sinh viên</option>
                 <option value="lecturer">Giảng viên</option>
                 <option value="alumni">Cựu sinh viên</option>
                 <option value="employer">Nhà tuyển dụng</option>
+                <option value="all">Tất cả</option>
               </select>
             </label>
-            <label>
-              Trạng thái
-              <select
-                value={form.status}
-                onChange={(event) => setForm({ ...form, status: event.target.value })}
-              >
+            <label>Trạng thái
+              <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
                 <option value="draft">Bản nháp</option>
                 <option value="published">Đang mở</option>
                 <option value="closed">Đã đóng</option>
@@ -471,32 +533,12 @@ function SurveyCrud({ auth, surveys, onChanged, onNotify }) {
             </label>
           </div>
           <div className="field-row">
-            <label>
-              Ngày bắt đầu
-              <input
-                type="date"
-                value={form.start_date}
-                onChange={(event) => setForm({ ...form, start_date: event.target.value })}
-              />
-            </label>
-            <label>
-              Ngày kết thúc
-              <input
-                type="date"
-                value={form.end_date}
-                onChange={(event) => setForm({ ...form, end_date: event.target.value })}
-              />
-            </label>
+            <label>Ngày bắt đầu<input type="date" value={form.start_date} onChange={(e) => setForm({ ...form, start_date: e.target.value })} /></label>
+            <label>Ngày kết thúc<input type="date" value={form.end_date} onChange={(e) => setForm({ ...form, end_date: e.target.value })} /></label>
           </div>
           <div className="form-actions">
-            <button className="primary-button" type="submit">
-              {isEditing ? "Lưu cập nhật" : "Tạo khảo sát"}
-            </button>
-            {isEditing && (
-              <button className="secondary-button" type="button" onClick={resetForm}>
-                Hủy
-              </button>
-            )}
+            <button className="primary-button">{editingId ? "Lưu cập nhật" : "Tạo khảo sát"}</button>
+            {editingId && <button type="button" className="secondary-button" onClick={() => { setEditingId(null); setForm(emptySurvey); }}>Hủy</button>}
           </div>
         </form>
       </Panel>
@@ -504,172 +546,92 @@ function SurveyCrud({ auth, surveys, onChanged, onNotify }) {
       <Panel title="Danh sách khảo sát">
         <div className="survey-list">
           {surveys.map((survey) => (
-            <SurveyCard
-              key={survey.id}
-              survey={survey}
-              actions={
-                <>
-                  <button className="secondary-button small" onClick={() => editSurvey(survey)}>
-                    Sửa
-                  </button>
-                  <button className="danger-button small" onClick={() => deleteSurvey(survey)}>
-                    Xóa
-                  </button>
-                </>
-              }
-            />
+            <SurveyCard key={survey.id} survey={survey}>
+              <button className="secondary-button small" onClick={() => edit(survey)}>Sửa</button>
+              <button className="danger-button small" onClick={() => remove(survey)}>Xóa</button>
+            </SurveyCard>
           ))}
-          {surveys.length === 0 && <EmptyState text="Chưa có khảo sát. Hãy tạo khảo sát đầu tiên." />}
+          {surveys.length === 0 && <EmptyState text="Chưa có khảo sát." />}
         </div>
       </Panel>
     </div>
   );
 }
 
-function QuestionCrud({ surveys, questions, onChanged, onNotify }) {
+function QuestionManager({ surveys, questions, onChanged, onNotify }) {
+  const [form, setForm] = useState(emptyQuestion);
   const [editingId, setEditingId] = useState(null);
-  const [form, setForm] = useState(emptyQuestionForm);
-  const isEditing = Boolean(editingId);
   const selectedSurveyId = form.survey_id || (surveys[0]?.id ? String(surveys[0].id) : "");
 
-  const resetForm = () => {
-    setEditingId(null);
-    setForm({
-      ...emptyQuestionForm,
-      survey_id: surveys[0]?.id ? String(surveys[0].id) : "",
-    });
-  };
-
-  const editQuestion = async (question) => {
+  async function edit(question) {
     const detail = await apiRequest(`/questions/${question.id}`);
     setEditingId(detail.id);
     setForm({
       survey_id: String(detail.survey_id),
-      content: detail.content || "",
-      question_type: detail.question_type || "text",
+      content: detail.content,
+      question_type: detail.question_type,
       is_required: Boolean(detail.is_required),
       sort_order: detail.sort_order || 0,
       optionsText: (detail.options || []).map((option) => option.option_text).join("\n"),
     });
-  };
+  }
 
-  const submitQuestion = async (event) => {
+  async function submit(event) {
     event.preventDefault();
-    const options = form.optionsText
-      .split("\n")
-      .map((line) => line.trim())
-      .filter(Boolean);
-
     const payload = {
       survey_id: Number(selectedSurveyId),
       content: form.content,
       question_type: form.question_type,
       is_required: form.is_required,
       sort_order: Number(form.sort_order || 0),
-      options,
+      options: form.optionsText.split("\n").map((line) => line.trim()).filter(Boolean),
     };
 
-    if (isEditing) {
-      await apiRequest(`/questions/${editingId}`, {
-        method: "PUT",
-        body: JSON.stringify(payload),
-      });
-      onNotify("Đã cập nhật câu hỏi.");
-    } else {
-      await apiRequest("/questions", {
-        method: "POST",
-        body: JSON.stringify(payload),
-      });
-      onNotify("Đã tạo câu hỏi.");
-    }
+    await apiRequest(editingId ? `/questions/${editingId}` : "/questions", {
+      method: editingId ? "PUT" : "POST",
+      body: JSON.stringify(payload),
+    });
 
-    resetForm();
+    setForm(emptyQuestion);
+    setEditingId(null);
+    onNotify(editingId ? "Đã cập nhật câu hỏi." : "Đã thêm câu hỏi.");
     onChanged();
-  };
+  }
 
-  const deleteQuestion = async (question) => {
+  async function remove(question) {
     if (!window.confirm("Xóa câu hỏi này?")) return;
     await apiRequest(`/questions/${question.id}`, { method: "DELETE" });
     onNotify("Đã xóa câu hỏi.");
-    if (editingId === question.id) resetForm();
     onChanged();
-  };
+  }
 
   return (
     <div className="crud-grid">
-      <Panel title={isEditing ? "Cập nhật câu hỏi" : "Thêm câu hỏi"}>
-        <form className="form-grid" onSubmit={submitQuestion}>
-          <label>
-            Khảo sát
-            <select
-              value={selectedSurveyId}
-              onChange={(event) => setForm({ ...form, survey_id: event.target.value })}
-              required
-            >
+      <Panel title={editingId ? "Cập nhật câu hỏi" : "Thêm câu hỏi"}>
+        <form className="form-grid" onSubmit={submit}>
+          <label>Khảo sát
+            <select value={selectedSurveyId} onChange={(e) => setForm({ ...form, survey_id: e.target.value })} required>
               <option value="">Chọn khảo sát</option>
-              {surveys.map((survey) => (
-                <option key={survey.id} value={survey.id}>
-                  {survey.title}
-                </option>
-              ))}
+              {surveys.map((survey) => <option key={survey.id} value={survey.id}>{survey.title}</option>)}
             </select>
           </label>
-          <label>
-            Nội dung câu hỏi
-            <textarea
-              value={form.content}
-              onChange={(event) => setForm({ ...form, content: event.target.value })}
-              required
-            />
-          </label>
+          <label>Nội dung câu hỏi<textarea value={form.content} onChange={(e) => setForm({ ...form, content: e.target.value })} required /></label>
           <div className="field-row">
-            <label>
-              Loại câu hỏi
-              <select
-                value={form.question_type}
-                onChange={(event) => setForm({ ...form, question_type: event.target.value })}
-              >
+            <label>Loại câu hỏi
+              <select value={form.question_type} onChange={(e) => setForm({ ...form, question_type: e.target.value })}>
                 <option value="text">Tự luận</option>
                 <option value="rating">Thang điểm</option>
                 <option value="single_choice">Một lựa chọn</option>
                 <option value="multiple_choice">Nhiều lựa chọn</option>
               </select>
             </label>
-            <label>
-              Thứ tự
-              <input
-                type="number"
-                min="0"
-                value={form.sort_order}
-                onChange={(event) => setForm({ ...form, sort_order: event.target.value })}
-              />
-            </label>
+            <label>Thứ tự<input type="number" value={form.sort_order} onChange={(e) => setForm({ ...form, sort_order: e.target.value })} /></label>
           </div>
-          <label>
-            Phương án trả lời
-            <textarea
-              value={form.optionsText}
-              onChange={(event) => setForm({ ...form, optionsText: event.target.value })}
-              placeholder="Mỗi dòng là một phương án. Chỉ cần nhập cho câu hỏi lựa chọn."
-            />
-          </label>
-          <label className="inline-check">
-            <input
-              type="checkbox"
-              checked={form.is_required}
-              onChange={(event) => setForm({ ...form, is_required: event.target.checked })}
-            />
-            Bắt buộc trả lời
-          </label>
+          <label>Phương án trả lời<textarea value={form.optionsText} onChange={(e) => setForm({ ...form, optionsText: e.target.value })} placeholder="Mỗi dòng là một phương án." /></label>
+          <label className="inline-check"><input type="checkbox" checked={form.is_required} onChange={(e) => setForm({ ...form, is_required: e.target.checked })} />Bắt buộc trả lời</label>
           <div className="form-actions">
-            <button className="primary-button" type="submit" disabled={surveys.length === 0}>
-              {isEditing ? "Lưu cập nhật" : "Thêm câu hỏi"}
-            </button>
-            {isEditing && (
-              <button className="secondary-button" type="button" onClick={resetForm}>
-                Hủy
-              </button>
-            )}
+            <button className="primary-button" disabled={surveys.length === 0}>{editingId ? "Lưu cập nhật" : "Thêm câu hỏi"}</button>
+            {editingId && <button type="button" className="secondary-button" onClick={() => { setEditingId(null); setForm(emptyQuestion); }}>Hủy</button>}
           </div>
         </form>
       </Panel>
@@ -682,125 +644,198 @@ function QuestionCrud({ surveys, questions, onChanged, onNotify }) {
               <div>
                 <div className="card-meta">
                   <span className="code">{questionTypeLabel(question.question_type)}</span>
-                  {Boolean(question.is_required) && <span className="status">Bắt buộc</span>}
+                  {question.is_required ? <span className="status">Bắt buộc</span> : null}
                 </div>
                 <h3>{question.content}</h3>
                 <p>Khảo sát: {question.survey_title}</p>
                 <div className="row-actions">
-                  <button className="secondary-button small" onClick={() => editQuestion(question)}>
-                    Sửa
-                  </button>
-                  <button className="danger-button small" onClick={() => deleteQuestion(question)}>
-                    Xóa
-                  </button>
+                  <button className="secondary-button small" onClick={() => edit(question)}>Sửa</button>
+                  <button className="danger-button small" onClick={() => remove(question)}>Xóa</button>
                 </div>
               </div>
             </article>
           ))}
-          {questions.length === 0 && <EmptyState text="Chưa có câu hỏi trong database." />}
+          {questions.length === 0 && <EmptyState text="Chưa có câu hỏi." />}
         </div>
       </Panel>
     </div>
   );
 }
 
-function Reports({ surveys, questions }) {
-  const statusCounts = {
-    draft: surveys.filter((survey) => survey.status === "draft").length,
-    published: surveys.filter((survey) => survey.status === "published").length,
-    closed: surveys.filter((survey) => survey.status === "closed").length,
-  };
+function AnswerSurvey({ surveys, onChanged, onNotify }) {
+  const openSurveys = surveys.filter((survey) => survey.status === "published");
+  const [surveyId, setSurveyId] = useState("");
+  const [surveyForm, setSurveyForm] = useState(null);
+  const [answers, setAnswers] = useState({});
+
+  async function loadSurvey(id) {
+    setSurveyId(id);
+    setAnswers({});
+    setSurveyForm(id ? await apiRequest(`/surveys/${id}/form`) : null);
+  }
+
+  function setAnswer(question, value) {
+    setAnswers({ ...answers, [question.id]: value });
+  }
+
+  async function submit(event) {
+    event.preventDefault();
+    const payload = {
+      survey_id: Number(surveyId),
+      answers: surveyForm.questions.map((question) => {
+        const value = answers[question.id];
+        if (question.question_type === "multiple_choice") {
+          return { question_id: question.id, option_ids: value || [] };
+        }
+        if (question.question_type === "single_choice") {
+          return { question_id: question.id, option_id: value || null };
+        }
+        if (question.question_type === "rating") {
+          return { question_id: question.id, rating_value: value || null };
+        }
+        return { question_id: question.id, answer_text: value || "" };
+      }),
+    };
+
+    await apiRequest("/responses", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    setSurveyForm(null);
+    setSurveyId("");
+    setAnswers({});
+    onNotify("Đã gửi phản hồi khảo sát.");
+    onChanged();
+  }
 
   return (
-    <div className="grid-2 report-grid">
-      <Panel title="Thống kê khảo sát">
-        <div className="bar-list">
-          {Object.entries(statusCounts).map(([status, count]) => {
-            const percent = surveys.length ? Math.round((count / surveys.length) * 100) : 0;
-            return (
-              <div className="bar-row" key={status}>
-                <span>{surveyStatusLabel(status)}</span>
-                <div><i style={{ width: `${percent}%` }} /></div>
-                <b>{count}</b>
-              </div>
-            );
-          })}
+    <div className="response-grid">
+      <Panel title="Chọn khảo sát đang mở">
+        <div className="survey-list">
+          {openSurveys.map((survey) => (
+            <SurveyCard key={survey.id} survey={survey}>
+              <button className="primary-button small" onClick={() => loadSurvey(survey.id)}>Trả lời</button>
+            </SurveyCard>
+          ))}
+          {openSurveys.length === 0 && <EmptyState text="Hiện chưa có khảo sát đang mở." />}
         </div>
       </Panel>
 
-      <Panel title="Kết quả dữ liệu">
-        <div className="output-list">
-          <InfoCard icon="survey" title="Khảo sát" text={`${surveys.length} bản ghi từ bảng surveys`} />
-          <InfoCard icon="question" title="Câu hỏi" text={`${questions.length} bản ghi từ bảng questions`} />
-          <InfoCard icon="chart" title="Nguồn dữ liệu" text="Frontend đang đọc trực tiếp từ API backend Express." />
+      <Panel title="Phiếu trả lời">
+        {!surveyForm && <EmptyState text="Chọn một khảo sát để bắt đầu trả lời." />}
+        {surveyForm && (
+          <form className="response-form" onSubmit={submit}>
+            <h2>{surveyForm.title}</h2>
+            <p>{surveyForm.description}</p>
+            {surveyForm.questions.map((question, index) => (
+              <fieldset key={question.id}>
+                <legend>{index + 1}. {question.content}</legend>
+                {question.question_type === "text" && (
+                  <textarea required={Boolean(question.is_required)} value={answers[question.id] || ""} onChange={(e) => setAnswer(question, e.target.value)} />
+                )}
+                {question.question_type === "rating" && (
+                  <select required={Boolean(question.is_required)} value={answers[question.id] || ""} onChange={(e) => setAnswer(question, e.target.value)}>
+                    <option value="">Chọn điểm</option>
+                    {[1, 2, 3, 4, 5].map((value) => <option key={value} value={value}>{value}</option>)}
+                  </select>
+                )}
+                {question.question_type === "single_choice" && question.options.map((option) => (
+                  <label key={option.id}>
+                    <input type="radio" name={`q-${question.id}`} value={option.id} required={Boolean(question.is_required)} onChange={() => setAnswer(question, option.id)} />
+                    {option.option_text}
+                  </label>
+                ))}
+                {question.question_type === "multiple_choice" && question.options.map((option) => {
+                  const current = answers[question.id] || [];
+                  return (
+                    <label key={option.id}>
+                      <input
+                        type="checkbox"
+                        checked={current.includes(option.id)}
+                        onChange={(e) => {
+                          setAnswer(question, e.target.checked ? [...current, option.id] : current.filter((id) => id !== option.id));
+                        }}
+                      />
+                      {option.option_text}
+                    </label>
+                  );
+                })}
+              </fieldset>
+            ))}
+            <button className="primary-button">Gửi phản hồi</button>
+          </form>
+        )}
+      </Panel>
+    </div>
+  );
+}
+
+function Reports({ stats, surveys, questions }) {
+  const surveyStats = stats?.surveys || [];
+
+  return (
+    <div className="screen-stack">
+      <div className="metric-grid">
+        <Metric icon="survey" label="Khảo sát" value={surveys.length} />
+        <Metric icon="question" label="Câu hỏi" value={questions.length} />
+        <Metric icon="check" label="Phản hồi" value={surveyStats.reduce((sum, item) => sum + Number(item.response_count || 0), 0)} />
+        <Metric icon="chart" label="Đang mở" value={surveys.filter((survey) => survey.status === "published").length} />
+      </div>
+      <Panel title="Thống kê phản hồi theo khảo sát">
+        <div className="table-wrap">
+          <table>
+            <thead><tr><th>Khảo sát</th><th>Đối tượng</th><th>Câu hỏi</th><th>Phản hồi</th><th>Trạng thái</th></tr></thead>
+            <tbody>
+              {surveyStats.map((survey) => (
+                <tr key={survey.id}>
+                  <td>{survey.title}</td>
+                  <td>{groupLabel(survey.target_group)}</td>
+                  <td>{survey.question_count}</td>
+                  <td>{survey.response_count}</td>
+                  <td>{statusLabel(survey.status)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </Panel>
     </div>
   );
 }
 
-function SurveyCard({ survey, actions }) {
+function SurveyCard({ survey, children }) {
   return (
     <article className="survey-card">
       <div>
         <div className="card-meta">
           <span className="code">#{survey.id}</span>
-          <span className={`status ${survey.status === "draft" ? "draft" : ""}`}>
-            {surveyStatusLabel(survey.status)}
-          </span>
+          <span className={`status ${survey.status === "draft" ? "draft" : ""}`}>{statusLabel(survey.status)}</span>
         </div>
         <h2>{survey.title}</h2>
-        <p>
-          Đối tượng: {targetGroupLabel(survey.target_group)} • Người tạo:{" "}
-          {survey.creator_name || survey.creator_id}
-        </p>
-        <p>
-          {formatDateInput(survey.start_date) || "Chưa có ngày bắt đầu"} →{" "}
-          {formatDateInput(survey.end_date) || "Chưa có ngày kết thúc"}
-        </p>
+        <p>Đối tượng: {groupLabel(survey.target_group)} | Người tạo: {survey.creator_name || survey.creator_id}</p>
+        <p>{formatDate(survey.start_date) || "Chưa có ngày bắt đầu"} - {formatDate(survey.end_date) || "Chưa có ngày kết thúc"}</p>
       </div>
-      {actions && <div className="survey-actions">{actions}</div>}
+      {children && <div className="survey-actions">{children}</div>}
     </article>
   );
 }
 
-function Metric({ icon, label, value, note }) {
+function Metric({ icon, label, value }) {
   return (
     <article className="metric-card">
       <Icon name={icon} />
       <span>{label}</span>
       <strong>{value}</strong>
-      <small>{note}</small>
     </article>
   );
 }
 
-function Panel({ title, action, onAction, children }) {
+function Panel({ title, children }) {
   return (
     <section className="panel">
-      <div className="panel-header">
-        <h2>{title}</h2>
-        {action && (
-          <button className="secondary-button" onClick={onAction}>
-            <Icon name="plus" />
-            {action}
-          </button>
-        )}
-      </div>
+      <div className="panel-header"><h2>{title}</h2></div>
       {children}
     </section>
-  );
-}
-
-function InfoCard({ icon, title, text }) {
-  return (
-    <article className="info-card">
-      <Icon name={icon} />
-      <div>
-        <strong>{title}</strong>
-        <span>{text}</span>
-      </div>
-    </article>
   );
 }
 
@@ -808,44 +843,14 @@ function EmptyState({ text }) {
   return <div className="empty-state">{text}</div>;
 }
 
-function surveyStatusLabel(status) {
-  return {
-    draft: "Bản nháp",
-    published: "Đang mở",
-    closed: "Đã đóng",
-  }[status] || status;
-}
-
-function targetGroupLabel(group) {
-  return {
-    all: "Tất cả",
-    student: "Sinh viên",
-    lecturer: "Giảng viên",
-    alumni: "Cựu sinh viên",
-    employer: "Nhà tuyển dụng",
-  }[group] || group;
-}
-
-function questionTypeLabel(type) {
-  return {
-    text: "Tự luận",
-    rating: "Thang điểm",
-    single_choice: "Một lựa chọn",
-    multiple_choice: "Nhiều lựa chọn",
-  }[type] || type;
-}
-
 function Icon({ name }) {
   const paths = {
     dashboard: <path d="M4 5h7v7H4zM13 5h7v4h-7zM13 11h7v8h-7zM4 14h7v5H4z" />,
     survey: <path d="M7 3h10l3 3v15H4V3h3zm9 1v4h4M8 10h8M8 14h8M8 18h5" />,
-    edit: <path d="M4 20h4l11-11-4-4L4 16v4zm11-15 4 4" />,
     check: <path d="m4 12 5 5L20 6" />,
     users: <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />,
     chart: <path d="M4 19V5M4 19h16M8 16V9M12 16V7M16 16v-4" />,
-    report: <path d="M6 3h9l3 3v15H6V3zm8 0v5h4M9 13h6M9 17h6" />,
     question: <path d="M9 9a3 3 0 1 1 5 2.24c-1.2.8-2 1.24-2 2.76M12 18h.01" />,
-    plus: <path d="M12 5v14M5 12h14" />,
     menu: <path d="M4 7h16M4 12h16M4 17h16" />,
     close: <path d="M6 6l12 12M18 6 6 18" />,
   };

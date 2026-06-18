@@ -1,0 +1,17 @@
+import { Router } from 'express'
+
+import {
+  getResponseStats,
+  submitResponse,
+} from '../controllers/responseController.js'
+import { requireAuth, requireRole } from '../middleware/authMiddleware.js'
+import { asyncHandler } from '../utils/asyncHandler.js'
+
+const router = Router()
+
+router.use(asyncHandler(requireAuth))
+
+router.post('/', requireRole('student', 'respondent'), asyncHandler(submitResponse))
+router.get('/stats', requireRole('admin', 'survey_creator'), asyncHandler(getResponseStats))
+
+export default router

@@ -82,6 +82,53 @@ export async function getSurveyById(req, res) {
   return res.json(rows[0])
 }
 
+export async function getSurveyForm(req, res) {
+  const surveyRows = await query(
+    `SELECT
+       s.id,
+       s.title,
+       s.description,
+       s.target_group,
+       s.start_date,
+       s.end_date,
+       s.status
+     FROM surveys s
+     WHERE s.id = :id`,
+    { id: req.params.id },
+  )
+
+  if (surveyRows.length === 0) {
+    return res.status(404).json({ message: 'Survey not found' })
+  }
+
+  const questionRows = await query(
+    `SELECT id, survey_id, content, question_type, is_required, sort_order
+     FROM questions
+     WHERE survey_id = :id
+     ORDER BY sort_order ASC, id ASC`,
+    { id: req.params.id },
+  )
+
+  const optionRows = await query(
+    `SELECT qo.id, qo.question_id, qo.option_text, qo.sort_order
+     FROM question_options qo
+     JOIN questions q ON q.id = qo.question_id
+     WHERE q.survey_id = :id
+     ORDER BY qo.sort_order ASC, qo.id ASC`,
+    { id: req.params.id },
+  )
+
+  const questions = questionRows.map((question) => ({
+    ...question,
+    options: optionRows.filter((option) => option.question_id === question.id),
+  }))
+
+  return res.json({
+    ...surveyRows[0],
+    questions,
+  })
+}
+
 export async function createSurvey(req, res) {
   const errors = validateSurveyPayload(req.body)
   if (errors.length > 0) {
