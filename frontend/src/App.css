@@ -667,6 +667,51 @@ textarea {
   text-align: center;
 }
 
+.import-box {
+  display: grid;
+  gap: 14px;
+}
+
+.import-box label {
+  display: grid;
+  gap: 7px;
+  font-weight: 700;
+  color: #344054;
+}
+
+.import-hint {
+  border: 1px dashed #cfc7ba;
+  background: #fbfaf7;
+  border-radius: 8px;
+  padding: 12px 14px;
+  display: grid;
+  gap: 4px;
+}
+
+.import-hint span {
+  color: #6f756f;
+  font-size: 13px;
+}
+
+.import-result {
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.import-result span {
+  border: 1px solid #e2ded6;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 10px;
+  color: #6f756f;
+}
+
+.import-result strong {
+  color: #16735e;
+}
+
 .question-card {
   padding: 16px;
   display: grid;

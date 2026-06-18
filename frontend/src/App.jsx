@@ -104,10 +104,11 @@ function formatDate(value) {
 
 async function apiRequest(path, options = {}) {
   const token = localStorage.getItem("authToken");
+  const isFormData = options.body instanceof FormData;
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
     headers: {
-      "Content-Type": "application/json",
+      ...(isFormData ? {} : { "Content-Type": "application/json" }),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...options.headers,
     },
@@ -400,6 +401,9 @@ function UserManager({ users, onChanged, onNotify }) {
   const [editingId, setEditingId] = useState(null);
   const [keyword, setKeyword] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
+  const [importFile, setImportFile] = useState(null);
+  const [importResult, setImportResult] = useState(null);
+  const [isImporting, setIsImporting] = useState(false);
   const filteredUsers = users.filter((user) => {
     const haystack = normalizeSearch(`${user.full_name} ${user.email} ${user.student_code} ${user.class_name}`);
     const matchesKeyword = haystack.includes(normalizeSearch(keyword));
@@ -436,39 +440,94 @@ function UserManager({ users, onChanged, onNotify }) {
     onChanged();
   }
 
+  async function importStudents(event) {
+    event.preventDefault();
+    if (!importFile) return;
+
+    const formData = new FormData();
+    formData.append("file", importFile);
+    setIsImporting(true);
+    setImportResult(null);
+
+    try {
+      const result = await apiRequest("/users/import-students", {
+        method: "POST",
+        body: formData,
+      });
+      setImportResult(result);
+      setImportFile(null);
+      event.target.reset();
+      onNotify(`Đã import ${result.imported_count} sinh viên.`);
+      onChanged();
+    } finally {
+      setIsImporting(false);
+    }
+  }
+
   return (
     <div className="crud-grid">
-      <Panel title={editingId ? "Cập nhật người dùng" : "Thêm người dùng"}>
-        <form className="form-grid" onSubmit={submit}>
-          <label>Họ tên<input value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} required /></label>
-          <div className="field-row">
-            <label>Mã sinh viên<input value={form.student_code || ""} onChange={(e) => setForm({ ...form, student_code: e.target.value })} /></label>
-            <label>Lớp<input value={form.class_name || ""} onChange={(e) => setForm({ ...form, class_name: e.target.value })} /></label>
-          </div>
-          <label>Email<input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required /></label>
-          <label>Mật khẩu<input type="password" value={form.password || ""} onChange={(e) => setForm({ ...form, password: e.target.value })} required={!editingId} /></label>
-          <div className="field-row">
-            <label>Vai trò
-              <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
-                <option value="admin">Admin</option>
-                <option value="survey_creator">Cán bộ khảo sát</option>
-                <option value="student">Sinh viên</option>
-                <option value="respondent">Người tham gia</option>
-              </select>
+      <div className="screen-stack">
+        <Panel title="Import sinh viên từ Excel">
+          <form className="import-box" onSubmit={importStudents}>
+            <label>
+              File .xlsx hoặc .xls
+              <input
+                type="file"
+                accept=".xlsx,.xls"
+                onChange={(event) => setImportFile(event.target.files?.[0] || null)}
+              />
             </label>
-            <label>Trạng thái
-              <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
-                <option value="active">Hoạt động</option>
-                <option value="locked">Khóa</option>
-              </select>
-            </label>
-          </div>
-          <div className="form-actions">
-            <button className="primary-button">{editingId ? "Lưu cập nhật" : "Thêm người dùng"}</button>
-            {editingId && <button type="button" className="secondary-button" onClick={() => { setEditingId(null); setForm(emptyUser); }}>Hủy</button>}
-          </div>
-        </form>
-      </Panel>
+            <div className="import-hint">
+              <strong>Cột hỗ trợ</strong>
+              <span>Mã sinh viên, Họ, Tên, Lớp, Ngày sinh. Có thể dùng Họ tên thay cho Họ/Tên.</span>
+              <span>Mã sinh viên là tên đăng nhập, ngày sinh là mật khẩu, role mặc định là student.</span>
+            </div>
+            <button className="primary-button" disabled={!importFile || isImporting}>
+              {isImporting ? "Đang import..." : "Import sinh viên"}
+            </button>
+          </form>
+          {importResult && (
+            <div className="import-result">
+              <span>Tổng dòng: <strong>{importResult.total_rows}</strong></span>
+              <span>Tạo mới: <strong>{importResult.created}</strong></span>
+              <span>Cập nhật: <strong>{importResult.updated}</strong></span>
+              <span>Bỏ qua: <strong>{importResult.skipped}</strong></span>
+            </div>
+          )}
+        </Panel>
+
+        <Panel title={editingId ? "Cập nhật người dùng" : "Thêm người dùng"}>
+          <form className="form-grid" onSubmit={submit}>
+            <label>Họ tên<input value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} required /></label>
+            <div className="field-row">
+              <label>Mã sinh viên<input value={form.student_code || ""} onChange={(e) => setForm({ ...form, student_code: e.target.value })} /></label>
+              <label>Lớp<input value={form.class_name || ""} onChange={(e) => setForm({ ...form, class_name: e.target.value })} /></label>
+            </div>
+            <label>Email<input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required /></label>
+            <label>Mật khẩu<input type="password" value={form.password || ""} onChange={(e) => setForm({ ...form, password: e.target.value })} required={!editingId} /></label>
+            <div className="field-row">
+              <label>Vai trò
+                <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
+                  <option value="admin">Admin</option>
+                  <option value="survey_creator">Cán bộ khảo sát</option>
+                  <option value="student">Sinh viên</option>
+                  <option value="respondent">Người tham gia</option>
+                </select>
+              </label>
+              <label>Trạng thái
+                <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
+                  <option value="active">Hoạt động</option>
+                  <option value="locked">Khóa</option>
+                </select>
+              </label>
+            </div>
+            <div className="form-actions">
+              <button className="primary-button">{editingId ? "Lưu cập nhật" : "Thêm người dùng"}</button>
+              {editingId && <button type="button" className="secondary-button" onClick={() => { setEditingId(null); setForm(emptyUser); }}>Hủy</button>}
+            </div>
+          </form>
+        </Panel>
+      </div>
 
       <Panel title="Danh sách người dùng">
         <div className="list-toolbar">

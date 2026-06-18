@@ -1,4 +1,5 @@
 import bcrypt from 'bcryptjs'
+import xlsx from 'xlsx'
 
 import { query } from '../config/db.js'
 
@@ -55,6 +56,78 @@ function validateUserPayload(payload, partial = false) {
   }
 
   return errors
+}
+
+function normalizeHeader(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/đ/g, 'd')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, '_')
+}
+
+function getCell(row, names) {
+  for (const name of names) {
+    const normalizedName = normalizeHeader(name)
+    const foundKey = Object.keys(row).find((key) => normalizeHeader(key) === normalizedName)
+    if (foundKey && row[foundKey] !== undefined && row[foundKey] !== null && String(row[foundKey]).trim() !== '') {
+      return String(row[foundKey]).trim()
+    }
+  }
+  return ''
+}
+
+function getRawCell(row, names) {
+  const normalizedNames = names.map(normalizeHeader)
+  const foundKey = Object.keys(row).find((key) => normalizedNames.includes(normalizeHeader(key)))
+  return foundKey ? row[foundKey] : ''
+}
+
+function normalizeExcelDate(value) {
+  if (!value) return ''
+
+  if (value instanceof Date) {
+    return value.toLocaleDateString('vi-VN', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    })
+  }
+
+  if (typeof value === 'number') {
+    const parsed = xlsx.SSF.parse_date_code(value)
+    if (parsed) {
+      return `${String(parsed.d).padStart(2, '0')}/${String(parsed.m).padStart(2, '0')}/${parsed.y}`
+    }
+  }
+
+  return String(value).trim()
+}
+
+function rowToStudent(row, index) {
+  const studentCode = getCell(row, ['ma_sinh_vien', 'ma sinh vien', 'mã sinh viên', 'm? sinh vi?n', 'masv', 'mssv', 'student_code'])
+  const firstName = getCell(row, ['ho', 'họ', 'h?', 'last_name'])
+  const lastName = getCell(row, ['ten', 'tên', 't?n', 'first_name'])
+  const fullName = getCell(row, ['ho_ten', 'ho ten', 'họ tên', 'h? ten', 'full_name']) || `${firstName} ${lastName}`.trim()
+  const className = getCell(row, ['lop', 'lớp', 'l?p', 'class', 'class_name'])
+  const birthDate = normalizeExcelDate(getRawCell(row, ['ngay_sinh', 'ngay sinh', 'ngày sinh', 'ng?y sinh', 'birth_date', 'birthday']))
+
+  const errors = []
+  if (!studentCode) errors.push('missing student_code')
+  if (!fullName) errors.push('missing full_name')
+  if (!birthDate) errors.push('missing birth_date')
+
+  return {
+    row_number: index + 2,
+    student_code: studentCode,
+    full_name: fullName,
+    class_name: className || null,
+    email: `${studentCode}@student.local`,
+    password: birthDate,
+    errors,
+  }
 }
 
 export async function getUsers(req, res) {
@@ -154,4 +227,102 @@ export async function deleteUser(req, res) {
   }
 
   return res.status(204).send()
+}
+
+export async function importStudents(req, res) {
+  if (!req.file) {
+    return res.status(400).json({ message: 'Excel file is required' })
+  }
+
+  const workbook = xlsx.read(req.file.buffer, {
+    type: 'buffer',
+    cellDates: true,
+  })
+  const sheetName = workbook.SheetNames[0]
+
+  if (!sheetName) {
+    return res.status(400).json({ message: 'Excel file does not contain any sheet' })
+  }
+
+  const rows = xlsx.utils.sheet_to_json(workbook.Sheets[sheetName], {
+    defval: '',
+    raw: false,
+  })
+
+  const students = rows.map(rowToStudent)
+  const invalidRows = students.filter((student) => student.errors.length > 0)
+  const validStudents = students.filter((student) => student.errors.length === 0)
+  let created = 0
+  let updated = 0
+  const imported = []
+
+  for (const student of validStudents) {
+    const passwordHash = await bcrypt.hash(student.password, 10)
+    const existingRows = await query(
+      `SELECT id FROM users
+       WHERE student_code = :student_code OR email = :email
+       LIMIT 1`,
+      {
+        student_code: student.student_code,
+        email: student.email,
+      },
+    )
+
+    if (existingRows.length > 0) {
+      await query(
+        `UPDATE users
+         SET full_name = :full_name,
+             class_name = :class_name,
+             password_hash = :password_hash,
+             role = 'student',
+             stakeholder_group = 'student',
+             status = 'active'
+         WHERE id = :id`,
+        {
+          id: existingRows[0].id,
+          full_name: student.full_name,
+          class_name: student.class_name,
+          password_hash: passwordHash,
+        },
+      )
+      updated += 1
+    } else {
+      await query(
+        `INSERT INTO users
+           (student_code, full_name, class_name, email, password_hash, role, stakeholder_group, status)
+         VALUES
+           (:student_code, :full_name, :class_name, :email, :password_hash, 'student', 'student', 'active')`,
+        {
+          student_code: student.student_code,
+          full_name: student.full_name,
+          class_name: student.class_name,
+          email: student.email,
+          password_hash: passwordHash,
+        },
+      )
+      created += 1
+    }
+
+    imported.push({
+      row_number: student.row_number,
+      student_code: student.student_code,
+      full_name: student.full_name,
+      class_name: student.class_name,
+    })
+  }
+
+  return res.status(201).json({
+    total_rows: students.length,
+    imported_count: imported.length,
+    created,
+    updated,
+    skipped: invalidRows.length,
+    imported,
+    invalid_rows: invalidRows.map((student) => ({
+      row_number: student.row_number,
+      student_code: student.student_code,
+      full_name: student.full_name,
+      errors: student.errors,
+    })),
+  })
 }
