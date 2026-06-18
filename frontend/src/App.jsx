@@ -98,6 +98,15 @@ function questionTypeLabel(type) {
   }[type] || type;
 }
 
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
 function formatDate(value) {
   return value ? String(value).slice(0, 10) : "";
 }
@@ -122,6 +131,30 @@ async function apiRequest(path, options = {}) {
   }
 
   return data;
+}
+
+async function downloadReport(path, filename) {
+  const token = localStorage.getItem("authToken");
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  });
+
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.message || "Không thể tải báo cáo");
+  }
+
+  const blob = await response.blob();
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(url);
 }
 
 function normalizeSearch(value) {
@@ -995,26 +1028,107 @@ function AnswerSurvey({ surveys, onChanged, onNotify }) {
 function Reports({ stats, surveys, questions }) {
   const surveyStats = stats?.surveys || [];
   const [keyword, setKeyword] = useState("");
+  const [exporting, setExporting] = useState("");
   const filteredStats = surveyStats.filter((survey) =>
     normalizeSearch(`${survey.title} ${survey.target_group} ${survey.status}`).includes(normalizeSearch(keyword)),
   );
   const reportPages = usePagedItems(filteredStats, 8);
+  const totalResponses = surveyStats.reduce((sum, item) => sum + Number(item.response_count || 0), 0);
+
+  async function exportExcel() {
+    setExporting("excel");
+    try {
+      await downloadReport("/responses/stats/export.xlsx", "bao-cao-thong-ke-khao-sat.xlsx");
+    } finally {
+      setExporting("");
+    }
+  }
+
+  function exportPdf() {
+    setExporting("pdf");
+    const reportWindow = window.open("", "_blank", "width=980,height=720");
+    if (!reportWindow) {
+      setExporting("");
+      return;
+    }
+
+    const rows = filteredStats.map((survey) => `
+      <tr>
+        <td>${escapeHtml(survey.title)}</td>
+        <td>${escapeHtml(groupLabel(survey.target_group))}</td>
+        <td>${survey.question_count}</td>
+        <td>${survey.response_count}</td>
+        <td>${escapeHtml(statusLabel(survey.status))}</td>
+      </tr>
+    `).join("");
+
+    reportWindow.document.write(`
+      <!doctype html>
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <title>Báo cáo thống kê khảo sát</title>
+          <style>
+            body { font-family: Arial, sans-serif; color: #20242c; margin: 32px; }
+            h1 { margin: 0 0 6px; font-size: 24px; }
+            .muted { color: #666; margin-bottom: 22px; }
+            .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 22px; }
+            .metric { border: 1px solid #ddd; border-radius: 8px; padding: 12px; }
+            .metric span { display: block; color: #666; font-size: 12px; }
+            .metric strong { font-size: 24px; }
+            table { width: 100%; border-collapse: collapse; }
+            th, td { border: 1px solid #ddd; padding: 9px 10px; text-align: left; font-size: 13px; }
+            th { background: #f3f3f3; }
+            @media print { button { display: none; } body { margin: 20px; } }
+          </style>
+        </head>
+        <body>
+          <button onclick="window.print()">Lưu/In PDF</button>
+          <h1>Báo cáo thống kê khảo sát</h1>
+          <div class="muted">Ngày xuất: ${new Date().toLocaleString("vi-VN")}</div>
+          <div class="metrics">
+            <div class="metric"><span>Khảo sát</span><strong>${surveys.length}</strong></div>
+            <div class="metric"><span>Câu hỏi</span><strong>${questions.length}</strong></div>
+            <div class="metric"><span>Phản hồi</span><strong>${totalResponses}</strong></div>
+            <div class="metric"><span>Đang mở</span><strong>${surveys.filter((survey) => survey.status === "published").length}</strong></div>
+          </div>
+          <table>
+            <thead>
+              <tr><th>Khảo sát</th><th>Đối tượng</th><th>Câu hỏi</th><th>Phản hồi</th><th>Trạng thái</th></tr>
+            </thead>
+            <tbody>${rows || '<tr><td colspan="5">Không có dữ liệu</td></tr>'}</tbody>
+          </table>
+        </body>
+      </html>
+    `);
+    reportWindow.document.close();
+    reportWindow.focus();
+    setExporting("");
+  }
 
   return (
     <div className="screen-stack">
       <div className="metric-grid">
         <Metric icon="survey" label="Khảo sát" value={surveys.length} />
         <Metric icon="question" label="Câu hỏi" value={questions.length} />
-        <Metric icon="check" label="Phản hồi" value={surveyStats.reduce((sum, item) => sum + Number(item.response_count || 0), 0)} />
+        <Metric icon="check" label="Phản hồi" value={totalResponses} />
         <Metric icon="chart" label="Đang mở" value={surveys.filter((survey) => survey.status === "published").length} />
       </div>
       <Panel title="Thống kê phản hồi theo khảo sát">
-        <div className="list-toolbar single">
+        <div className="report-toolbar">
           <input
             value={keyword}
             onChange={(event) => setKeyword(event.target.value)}
             placeholder="Tìm khảo sát trong thống kê"
           />
+          <div className="report-actions">
+            <button className="secondary-button" onClick={exportPdf} disabled={Boolean(exporting)}>
+              Xuất PDF
+            </button>
+            <button className="primary-button" onClick={exportExcel} disabled={Boolean(exporting)}>
+              {exporting === "excel" ? "Đang xuất..." : "Xuất Excel"}
+            </button>
+          </div>
         </div>
         <div className="table-wrap">
           <table>

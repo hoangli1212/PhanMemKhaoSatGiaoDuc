@@ -1191,6 +1191,20 @@ td small {
   font-size: 13px;
 }
 
+.report-toolbar {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.report-toolbar .report-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
 .message,
 .empty-state {
   border-color: #e2ded6;
@@ -1219,5 +1233,17 @@ fieldset {
 
   .pagination {
     justify-content: center;
+  }
+
+  .report-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .report-toolbar .report-actions {
+    justify-content: stretch;
+  }
+
+  .report-toolbar .report-actions button {
+    flex: 1;
   }
 }

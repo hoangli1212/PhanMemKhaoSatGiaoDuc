@@ -1,4 +1,5 @@
 import pool, { query } from '../config/db.js'
+import xlsx from 'xlsx'
 
 function normalizeAnswerRows(responseId, answers = []) {
   const rows = []
@@ -89,6 +90,12 @@ export async function submitResponse(req, res) {
 }
 
 export async function getResponseStats(req, res) {
+  const stats = await getStatsData()
+
+  return res.json(stats)
+}
+
+async function getStatsData() {
   const surveyRows = await query(
     `SELECT
        s.id,
@@ -135,9 +142,51 @@ export async function getResponseStats(req, res) {
      ORDER BY q.survey_id ASC, q.sort_order ASC`,
   )
 
-  return res.json({
+  return {
     surveys: surveyRows,
     choice_summary: optionRows,
     rating_summary: ratingRows,
+  }
+}
+
+export async function exportStatsExcel(req, res) {
+  const stats = await getStatsData()
+
+  const workbook = xlsx.utils.book_new()
+  const surveyRows = stats.surveys.map((survey) => ({
+    'Mã khảo sát': survey.id,
+    'Tên khảo sát': survey.title,
+    'Đối tượng': survey.target_group,
+    'Số câu hỏi': survey.question_count,
+    'Số phản hồi': survey.response_count,
+    'Trạng thái': survey.status,
+  }))
+  const choiceRows = stats.choice_summary.map((item) => ({
+    'Mã khảo sát': item.survey_id,
+    'Mã câu hỏi': item.question_id,
+    'Nội dung câu hỏi': item.content,
+    'Loại câu hỏi': item.question_type,
+    'Phương án': item.option_text || '',
+    'Số lượt chọn': item.selected_count,
+  }))
+  const ratingRows = stats.rating_summary.map((item) => ({
+    'Mã khảo sát': item.survey_id,
+    'Mã câu hỏi': item.question_id,
+    'Nội dung câu hỏi': item.content,
+    'Điểm trung bình': item.average_rating ? Number(item.average_rating).toFixed(2) : '',
+    'Số lượt đánh giá': item.rating_count,
+  }))
+
+  xlsx.utils.book_append_sheet(workbook, xlsx.utils.json_to_sheet(surveyRows), 'Tong quan')
+  xlsx.utils.book_append_sheet(workbook, xlsx.utils.json_to_sheet(choiceRows), 'Lua chon')
+  xlsx.utils.book_append_sheet(workbook, xlsx.utils.json_to_sheet(ratingRows), 'Thang diem')
+
+  const buffer = xlsx.write(workbook, {
+    type: 'buffer',
+    bookType: 'xlsx',
   })
+
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+  res.setHeader('Content-Disposition', 'attachment; filename="bao-cao-thong-ke-khao-sat.xlsx"')
+  return res.send(buffer)
 }
