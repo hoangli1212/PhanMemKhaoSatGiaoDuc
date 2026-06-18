@@ -6,6 +6,17 @@
   color: #172033;
 }
 
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
 .login-page {
   min-height: 100vh;
   display: grid;
@@ -194,6 +205,7 @@ svg {
 
 .main {
   min-width: 0;
+  max-width: 100%;
 }
 
 .topbar {
@@ -262,6 +274,8 @@ svg {
 
 .content {
   padding: 28px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .screen-stack {
@@ -332,6 +346,7 @@ svg {
 
 .panel {
   padding: 20px;
+  min-width: 0;
 }
 
 .panel-header {
@@ -778,12 +793,23 @@ fieldset input {
 
 .table-wrap {
   overflow-x: auto;
+  max-width: 100%;
 }
 
 table {
   width: 100%;
   min-width: 760px;
   border-collapse: collapse;
+}
+
+.compact-table {
+  min-width: 0;
+  table-layout: fixed;
+}
+
+.compact-table th,
+.compact-table td {
+  overflow-wrap: anywhere;
 }
 
 th,
@@ -1221,6 +1247,30 @@ td small {
   font-size: 16px;
 }
 
+.detail-page-header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid #e2ded6;
+  border-radius: 10px;
+  padding: 16px;
+  min-width: 0;
+}
+
+.detail-page-header h2 {
+  margin: 2px 0 0;
+  font-size: 20px;
+  color: #242821;
+  overflow-wrap: anywhere;
+}
+
+.detail-page-header span {
+  color: #6f756f;
+  font-size: 13px;
+}
+
 .message,
 .empty-state {
   border-color: #e2ded6;
@@ -1261,5 +1311,18 @@ fieldset {
 
   .report-toolbar .report-actions button {
     flex: 1;
+  }
+
+  .detail-page-header {
+    grid-template-columns: 1fr;
+  }
+
+  .detail-page-header .report-actions {
+    justify-content: stretch;
+  }
+
+  .detail-grid,
+  .metric-grid.compact {
+    grid-template-columns: 1fr;
   }
 }

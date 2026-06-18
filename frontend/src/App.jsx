@@ -1037,7 +1037,7 @@ function Reports({ stats, surveys, questions }) {
   );
   const reportPages = usePagedItems(filteredStats, 8);
   const totalResponses = surveyStats.reduce((sum, item) => sum + Number(item.response_count || 0), 0);
-  const activeSurveyId = selectedSurveyId || (surveyStats[0]?.id ? String(surveyStats[0].id) : "");
+  const activeSurveyId = selectedSurveyId;
 
   useEffect(() => {
     if (!activeSurveyId) {
@@ -1222,6 +1222,80 @@ function Reports({ stats, surveys, questions }) {
     setExporting("");
   }
 
+  if (selectedSurveyId) {
+    return (
+      <div className="screen-stack">
+        <div className="detail-page-header">
+          <button className="secondary-button" onClick={() => setSelectedSurveyId("")}>
+            Quay lại thống kê
+          </button>
+          <div>
+            <span>Chi tiết khảo sát</span>
+            <h2>{detail?.survey?.title || "Đang tải khảo sát..."}</h2>
+          </div>
+          <div className="report-actions">
+            <button className="secondary-button" onClick={exportSurveyPdf} disabled={!detail || Boolean(exporting)}>
+              Xuất PDF chi tiết
+            </button>
+            <button className="primary-button" onClick={exportSurveyExcel} disabled={!activeSurveyId || Boolean(exporting)}>
+              {exporting === "survey-excel" ? "Đang xuất..." : "Xuất Excel chi tiết"}
+            </button>
+          </div>
+        </div>
+
+        {detailLoading && <div className="message">Đang tải chi tiết khảo sát...</div>}
+        {!detailLoading && detail && (
+          <>
+            <div className="metric-grid compact">
+              <Metric icon="users" label="Tổng sinh viên" value={detail.summary.total_students} />
+              <Metric icon="check" label="Đã hoàn thành" value={detail.summary.completed_students} />
+              <Metric icon="chart" label="Chưa hoàn thành" value={detail.summary.incomplete_students} />
+              <Metric icon="question" label="Câu hỏi" value={detail.summary.question_count} />
+            </div>
+
+            <div className="detail-grid">
+              <Panel title="Sinh viên chưa hoàn thành">
+                <div className="table-wrap">
+                  <table className="compact-table">
+                    <thead><tr><th>Mã sinh viên</th><th>Họ tên</th><th>Lớp</th></tr></thead>
+                    <tbody>
+                      {detail.incomplete_students.slice(0, 12).map((student) => (
+                        <tr key={student.id}>
+                          <td>{student.student_code}</td>
+                          <td>{student.full_name}</td>
+                          <td>{student.class_name || ""}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {detail.incomplete_students.length === 0 && <EmptyState text="Tất cả sinh viên đã hoàn thành khảo sát." />}
+              </Panel>
+
+              <Panel title="Thống kê lựa chọn">
+                <div className="table-wrap">
+                  <table className="compact-table">
+                    <thead><tr><th>Câu hỏi</th><th>Phương án</th><th>Lượt chọn</th></tr></thead>
+                    <tbody>
+                      {detail.choice_summary.slice(0, 12).map((item) => (
+                        <tr key={`${item.question_id}-${item.option_id}`}>
+                          <td>{item.content}</td>
+                          <td>{item.option_text}</td>
+                          <td>{item.selected_count}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {detail.choice_summary.length === 0 && <EmptyState text="Khảo sát chưa có câu hỏi lựa chọn." />}
+              </Panel>
+            </div>
+          </>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="screen-stack">
       <div className="metric-grid">
@@ -1248,7 +1322,7 @@ function Reports({ stats, surveys, questions }) {
         </div>
         <div className="table-wrap">
           <table>
-            <thead><tr><th>Khảo sát</th><th>Đối tượng</th><th>Câu hỏi</th><th>Phản hồi</th><th>Trạng thái</th></tr></thead>
+            <thead><tr><th>Khảo sát</th><th>Đối tượng</th><th>Câu hỏi</th><th>Phản hồi</th><th>Trạng thái</th><th></th></tr></thead>
             <tbody>
               {reportPages.pageItems.map((survey) => (
                 <tr key={survey.id}>
@@ -1257,6 +1331,11 @@ function Reports({ stats, surveys, questions }) {
                   <td>{survey.question_count}</td>
                   <td>{survey.response_count}</td>
                   <td>{statusLabel(survey.status)}</td>
+                  <td>
+                    <button className="secondary-button small" onClick={() => setSelectedSurveyId(String(survey.id))}>
+                      Chi tiết
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -1264,74 +1343,6 @@ function Reports({ stats, surveys, questions }) {
         </div>
         {filteredStats.length === 0 && <EmptyState text="Chưa có dữ liệu thống kê phù hợp." />}
         <Pagination page={reportPages.page} totalPages={reportPages.totalPages} onPageChange={reportPages.setPage} />
-      </Panel>
-      <Panel title="Chi tiết theo từng khảo sát">
-        <div className="report-toolbar">
-          <select value={activeSurveyId} onChange={(event) => setSelectedSurveyId(event.target.value)}>
-            {surveyStats.map((survey) => (
-              <option key={survey.id} value={survey.id}>
-                {survey.title}
-              </option>
-            ))}
-          </select>
-          <div className="report-actions">
-            <button className="secondary-button" onClick={exportSurveyPdf} disabled={!detail || Boolean(exporting)}>
-              Xuất PDF chi tiết
-            </button>
-            <button className="primary-button" onClick={exportSurveyExcel} disabled={!activeSurveyId || Boolean(exporting)}>
-              {exporting === "survey-excel" ? "Đang xuất..." : "Xuất Excel chi tiết"}
-            </button>
-          </div>
-        </div>
-        {detailLoading && <div className="message">Đang tải chi tiết khảo sát...</div>}
-        {!detailLoading && detail && (
-          <div className="screen-stack">
-            <div className="metric-grid compact">
-              <Metric icon="users" label="Tổng sinh viên" value={detail.summary.total_students} />
-              <Metric icon="check" label="Đã hoàn thành" value={detail.summary.completed_students} />
-              <Metric icon="chart" label="Chưa hoàn thành" value={detail.summary.incomplete_students} />
-              <Metric icon="question" label="Câu hỏi" value={detail.summary.question_count} />
-            </div>
-            <div className="detail-grid">
-              <section>
-                <h3>Sinh viên chưa hoàn thành</h3>
-                <div className="table-wrap">
-                  <table>
-                    <thead><tr><th>Mã sinh viên</th><th>Họ tên</th><th>Lớp</th></tr></thead>
-                    <tbody>
-                      {detail.incomplete_students.slice(0, 10).map((student) => (
-                        <tr key={student.id}>
-                          <td>{student.student_code}</td>
-                          <td>{student.full_name}</td>
-                          <td>{student.class_name || ""}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                {detail.incomplete_students.length === 0 && <EmptyState text="Tất cả sinh viên đã hoàn thành khảo sát." />}
-              </section>
-              <section>
-                <h3>Thống kê lựa chọn</h3>
-                <div className="table-wrap">
-                  <table>
-                    <thead><tr><th>Câu hỏi</th><th>Phương án</th><th>Lượt chọn</th></tr></thead>
-                    <tbody>
-                      {detail.choice_summary.slice(0, 10).map((item) => (
-                        <tr key={`${item.question_id}-${item.option_id}`}>
-                          <td>{item.content}</td>
-                          <td>{item.option_text}</td>
-                          <td>{item.selected_count}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                {detail.choice_summary.length === 0 && <EmptyState text="Khảo sát chưa có câu hỏi lựa chọn." />}
-              </section>
-            </div>
-          </div>
-        )}
       </Panel>
     </div>
   );
