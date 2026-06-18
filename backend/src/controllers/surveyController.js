@@ -7,6 +7,13 @@ function normalizeNullableDate(value) {
   return value ? new Date(value) : null
 }
 
+function isSurveyOpenByDate(survey) {
+  const now = new Date()
+  const startDate = survey.start_date ? new Date(survey.start_date) : null
+  const endDate = survey.end_date ? new Date(survey.end_date) : null
+  return (!startDate || startDate <= now) && (!endDate || endDate >= now)
+}
+
 function validateSurveyPayload(payload, partial = false) {
   const errors = []
 
@@ -49,6 +56,8 @@ export async function getSurveys(req, res) {
   if (['student', 'respondent'].includes(req.user?.role)) {
     whereParts.push("s.status = 'published'")
     whereParts.push('(s.target_group = :target_group OR s.target_group = "all")')
+    whereParts.push('(s.start_date IS NULL OR s.start_date <= NOW())')
+    whereParts.push('(s.end_date IS NULL OR s.end_date >= NOW())')
     params.target_group = req.user.stakeholder_group || 'student'
   }
 
@@ -138,6 +147,9 @@ export async function getSurveyForm(req, res) {
     const targetGroup = req.user.stakeholder_group || 'student'
     if (survey.status !== 'published' || ![targetGroup, 'all'].includes(survey.target_group)) {
       return res.status(403).json({ message: 'Survey is not available for this user' })
+    }
+    if (!isSurveyOpenByDate(survey)) {
+      return res.status(403).json({ message: 'Survey is not open at this time' })
     }
   }
 

@@ -56,6 +56,8 @@ function getNavItems(role) {
   return [
     { id: "dashboard", label: "Tổng quan", icon: "dashboard" },
     { id: "answer", label: "Trả lời khảo sát", icon: "check" },
+    { id: "history", label: "Lịch sử", icon: "report" },
+    { id: "profile", label: "Tài khoản", icon: "users" },
   ];
 }
 
@@ -338,6 +340,12 @@ function App() {
           )}
           {activePage === "answer" && ["student", "respondent"].includes(auth.user.role) && (
             <AnswerSurvey surveys={surveys} onChanged={loadData} onNotify={notify} />
+          )}
+          {activePage === "history" && ["student", "respondent"].includes(auth.user.role) && (
+            <SurveyHistory />
+          )}
+          {activePage === "profile" && (
+            <ProfilePage user={auth.user} onNotify={notify} />
           )}
         </section>
       </main>
@@ -1032,11 +1040,156 @@ function AnswerSurvey({ surveys, onChanged, onNotify }) {
   );
 }
 
+function SurveyHistory() {
+  const [history, setHistory] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [keyword, setKeyword] = useState("");
+
+  useEffect(() => {
+    let ignore = false;
+    async function loadHistory() {
+      setLoading(true);
+      try {
+        const rows = await apiRequest("/responses/my-history");
+        if (!ignore) setHistory(rows);
+      } finally {
+        if (!ignore) setLoading(false);
+      }
+    }
+
+    loadHistory();
+    return () => {
+      ignore = true;
+    };
+  }, []);
+
+  const filteredHistory = history.filter((survey) =>
+    normalizeSearch(`${survey.title} ${survey.status}`).includes(normalizeSearch(keyword)),
+  );
+  const pages = usePagedItems(filteredHistory, 8);
+
+  return (
+    <Panel title="Lịch sử khảo sát">
+      <div className="list-toolbar single">
+        <input
+          value={keyword}
+          onChange={(event) => setKeyword(event.target.value)}
+          placeholder="Tìm khảo sát"
+        />
+      </div>
+      {loading && <div className="message">Đang tải lịch sử...</div>}
+      <div className="survey-list">
+        {pages.pageItems.map((survey) => (
+          <SurveyCard key={survey.id} survey={survey}>
+            {survey.is_completed ? (
+              <>
+                <span className="status">Đã hoàn thành</span>
+                <span className="muted-text">{formatDate(survey.submitted_at)}</span>
+              </>
+            ) : (
+              <span className="status draft">Chưa hoàn thành</span>
+            )}
+          </SurveyCard>
+        ))}
+      </div>
+      {!loading && filteredHistory.length === 0 && <EmptyState text="Chưa có lịch sử khảo sát." />}
+      <Pagination page={pages.page} totalPages={pages.totalPages} onPageChange={pages.setPage} />
+    </Panel>
+  );
+}
+
+function ProfilePage({ user, onNotify }) {
+  const [form, setForm] = useState({
+    current_password: "",
+    new_password: "",
+    confirm_password: "",
+  });
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  async function submit(event) {
+    event.preventDefault();
+    setError("");
+    if (form.new_password !== form.confirm_password) {
+      setError("Mật khẩu mới không khớp.");
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      await apiRequest("/auth/change-password", {
+        method: "PUT",
+        body: JSON.stringify({
+          current_password: form.current_password,
+          new_password: form.new_password,
+        }),
+      });
+      setForm({ current_password: "", new_password: "", confirm_password: "" });
+      onNotify("Đã đổi mật khẩu.");
+    } catch (err) {
+      setError(err.message || "Không thể đổi mật khẩu");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="crud-grid">
+      <Panel title="Thông tin tài khoản">
+        <div className="profile-list">
+          <InfoCard icon="users" title="Họ tên" text={user.full_name} />
+          <InfoCard icon="report" title="Vai trò" text={roleLabel(user.role)} />
+          <InfoCard icon="survey" title="Tài khoản" text={user.student_code || user.email} />
+          <InfoCard icon="question" title="Lớp" text={user.class_name || "Chưa cập nhật"} />
+        </div>
+      </Panel>
+      <Panel title="Đổi mật khẩu">
+        <form className="form-grid" onSubmit={submit}>
+          <label>
+            Mật khẩu hiện tại
+            <input
+              type="password"
+              value={form.current_password}
+              onChange={(event) => setForm({ ...form, current_password: event.target.value })}
+              required
+            />
+          </label>
+          <label>
+            Mật khẩu mới
+            <input
+              type="password"
+              value={form.new_password}
+              minLength="6"
+              onChange={(event) => setForm({ ...form, new_password: event.target.value })}
+              required
+            />
+          </label>
+          <label>
+            Nhập lại mật khẩu mới
+            <input
+              type="password"
+              value={form.confirm_password}
+              minLength="6"
+              onChange={(event) => setForm({ ...form, confirm_password: event.target.value })}
+              required
+            />
+          </label>
+          {error && <div className="message error-message">{error}</div>}
+          <button className="primary-button" disabled={submitting}>
+            {submitting ? "Đang lưu..." : "Đổi mật khẩu"}
+          </button>
+        </form>
+      </Panel>
+    </div>
+  );
+}
+
 function Reports({ stats, surveys, questions }) {
   const surveyStats = stats?.surveys || [];
   const [keyword, setKeyword] = useState("");
   const [exporting, setExporting] = useState("");
   const [selectedSurveyId, setSelectedSurveyId] = useState("");
+  const [classFilter, setClassFilter] = useState("");
   const [detail, setDetail] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const filteredStats = surveyStats.filter((survey) =>
@@ -1045,6 +1198,16 @@ function Reports({ stats, surveys, questions }) {
   const reportPages = usePagedItems(filteredStats, 8);
   const totalResponses = surveyStats.reduce((sum, item) => sum + Number(item.response_count || 0), 0);
   const activeSurveyId = selectedSurveyId;
+  const classOptions = Array.from(
+    new Set(
+      [
+        ...(detail?.completed_students || []),
+        ...(detail?.incomplete_students || []),
+      ]
+        .map((student) => student.class_name)
+        .filter(Boolean),
+    ),
+  ).sort();
 
   useEffect(() => {
     if (!activeSurveyId) {
@@ -1057,7 +1220,8 @@ function Reports({ stats, surveys, questions }) {
     async function loadDetail() {
       setDetailLoading(true);
       try {
-        const data = await apiRequest(`/responses/stats/${activeSurveyId}`);
+        const query = classFilter ? `?class_name=${encodeURIComponent(classFilter)}` : "";
+        const data = await apiRequest(`/responses/stats/${activeSurveyId}${query}`);
         if (!ignore) setDetail(data);
       } finally {
         if (!ignore) setDetailLoading(false);
@@ -1068,7 +1232,7 @@ function Reports({ stats, surveys, questions }) {
     return () => {
       ignore = true;
     };
-  }, [activeSurveyId]);
+  }, [activeSurveyId, classFilter]);
 
   async function exportExcel() {
     setExporting("excel");
@@ -1146,8 +1310,10 @@ function Reports({ stats, surveys, questions }) {
     setExporting("survey-excel");
     try {
       await downloadReport(
-        `/responses/stats/${activeSurveyId}/export.xlsx`,
-        `bao-cao-chi-tiet-khao-sat-${activeSurveyId}.xlsx`,
+        `/responses/stats/${activeSurveyId}/export.xlsx${classFilter ? `?class_name=${encodeURIComponent(classFilter)}` : ""}`,
+        classFilter
+          ? `bao-cao-chi-tiet-khao-sat-${activeSurveyId}-${classFilter}.xlsx`
+          : `bao-cao-chi-tiet-khao-sat-${activeSurveyId}.xlsx`,
       );
     } finally {
       setExporting("");
@@ -1233,7 +1399,7 @@ function Reports({ stats, surveys, questions }) {
     return (
       <div className="screen-stack">
         <div className="detail-page-header">
-          <button className="secondary-button" onClick={() => setSelectedSurveyId("")}>
+          <button className="secondary-button" onClick={() => { setSelectedSurveyId(""); setClassFilter(""); }}>
             Quay lại thống kê
           </button>
           <div>
@@ -1241,6 +1407,17 @@ function Reports({ stats, surveys, questions }) {
             <h2>{detail?.survey?.title || "Đang tải khảo sát..."}</h2>
           </div>
           <div className="report-actions">
+            <select value={classFilter} onChange={(event) => setClassFilter(event.target.value)}>
+              <option value="">Tất cả lớp</option>
+              {classOptions.map((className) => (
+                <option key={className} value={className}>
+                  {className}
+                </option>
+              ))}
+              {classFilter && !classOptions.includes(classFilter) && (
+                <option value={classFilter}>{classFilter}</option>
+              )}
+            </select>
             <button className="secondary-button" onClick={exportSurveyPdf} disabled={!detail || Boolean(exporting)}>
               Xuất PDF chi tiết
             </button>
@@ -1303,6 +1480,59 @@ function Reports({ stats, surveys, questions }) {
                 {detail.choice_summary.length === 0 && <EmptyState text="Khảo sát chưa có câu hỏi lựa chọn." />}
               </Panel>
             </div>
+            <Panel title="Kết quả từng câu hỏi">
+              <div className="question-result-list">
+                {detail.questions.map((question) => {
+                  const choiceItems = detail.choice_summary.filter((item) => Number(item.question_id) === Number(question.id));
+                  const ratingItem = detail.rating_summary.find((item) => Number(item.question_id) === Number(question.id));
+                  const textAnswers = detail.answers.filter(
+                    (answer) => Number(answer.question_id) === Number(question.id) && answer.answer_text,
+                  );
+                  const totalChoiceCount = choiceItems.reduce((sum, item) => sum + Number(item.selected_count || 0), 0);
+
+                  return (
+                    <article className="question-result-card" key={question.id}>
+                      <div className="card-meta">
+                        <span className="code">{questionTypeLabel(question.question_type)}</span>
+                        {question.is_required ? <span className="status">Bắt buộc</span> : null}
+                      </div>
+                      <h3>{question.content}</h3>
+                      {choiceItems.length > 0 && (
+                        <div className="chart-list compact">
+                          {choiceItems.map((item) => {
+                            const percent = totalChoiceCount ? Math.round((Number(item.selected_count || 0) / totalChoiceCount) * 100) : 0;
+                            return (
+                              <div className="chart-row" key={item.option_id}>
+                                <span>{item.option_text}</span>
+                                <div className="chart-track"><i style={{ width: `${percent}%` }} /></div>
+                                <b>{percent}%</b>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                      {question.question_type === "rating" && (
+                        <div className="rating-summary">
+                          <strong>{ratingItem?.average_rating ? Number(ratingItem.average_rating).toFixed(2) : "0.00"}</strong>
+                          <span>Điểm trung bình từ {ratingItem?.rating_count || 0} lượt đánh giá</span>
+                        </div>
+                      )}
+                      {question.question_type === "text" && (
+                        <div className="text-answer-list">
+                          {textAnswers.slice(0, 5).map((answer) => (
+                            <blockquote key={`${answer.response_id}-${answer.question_id}`}>
+                              {answer.answer_text}
+                              <span>{answer.full_name}</span>
+                            </blockquote>
+                          ))}
+                          {textAnswers.length === 0 && <EmptyState text="Chưa có câu trả lời tự luận." />}
+                        </div>
+                      )}
+                    </article>
+                  );
+                })}
+              </div>
+            </Panel>
           </>
         )}
       </div>
@@ -1345,7 +1575,7 @@ function Reports({ stats, surveys, questions }) {
                   <td>{survey.response_count}</td>
                   <td>{statusLabel(survey.status)}</td>
                   <td>
-                    <button className="secondary-button small" onClick={() => setSelectedSurveyId(String(survey.id))}>
+                    <button className="secondary-button small" onClick={() => { setClassFilter(""); setSelectedSurveyId(String(survey.id)); }}>
                       Chi tiết
                     </button>
                   </td>
@@ -1392,6 +1622,18 @@ function SurveyCard({ survey, children }) {
         <p>{formatDate(survey.start_date) || "Chưa có ngày bắt đầu"} - {formatDate(survey.end_date) || "Chưa có ngày kết thúc"}</p>
       </div>
       {children && <div className="survey-actions">{children}</div>}
+    </article>
+  );
+}
+
+function InfoCard({ icon, title, text }) {
+  return (
+    <article className="info-card">
+      <Icon name={icon} />
+      <div>
+        <strong>{title}</strong>
+        <span>{text}</span>
+      </div>
     </article>
   );
 }

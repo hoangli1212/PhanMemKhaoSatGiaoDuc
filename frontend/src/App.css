@@ -1231,6 +1231,15 @@ td small {
   gap: 10px;
 }
 
+.report-actions select {
+  min-width: 140px;
+}
+
+.muted-text {
+  color: #6f756f;
+  font-size: 13px;
+}
+
 .metric-grid.compact {
   grid-template-columns: repeat(4, minmax(140px, 1fr));
 }
@@ -1289,6 +1298,10 @@ td small {
   gap: 12px;
 }
 
+.chart-list.compact {
+  gap: 9px;
+}
+
 .chart-row {
   display: grid;
   grid-template-columns: minmax(180px, 0.8fr) minmax(160px, 1fr) 52px;
@@ -1305,6 +1318,68 @@ td small {
 
 .chart-row b {
   color: #16735e;
+}
+
+.question-result-list {
+  display: grid;
+  gap: 14px;
+}
+
+.question-result-card {
+  border: 1px solid #e2ded6;
+  border-radius: 10px;
+  background: #fffefa;
+  padding: 16px;
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.question-result-card h3 {
+  margin: 0;
+  color: #242821;
+  font-size: 16px;
+  overflow-wrap: anywhere;
+}
+
+.rating-summary {
+  border: 1px solid #e2ded6;
+  border-radius: 8px;
+  background: #fbfaf7;
+  padding: 12px;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.rating-summary strong {
+  font-size: 28px;
+  color: #16735e;
+}
+
+.rating-summary span {
+  color: #6f756f;
+}
+
+.text-answer-list {
+  display: grid;
+  gap: 10px;
+}
+
+.text-answer-list blockquote {
+  margin: 0;
+  border-left: 3px solid #dcc19a;
+  background: #fbfaf7;
+  padding: 10px 12px;
+  color: #344054;
+  overflow-wrap: anywhere;
+}
+
+.text-answer-list blockquote span {
+  display: block;
+  margin-top: 6px;
+  color: #6f756f;
+  font-size: 12px;
 }
 
 .detail-page-header {

@@ -76,3 +76,43 @@ export async function login(req, res) {
     user: sanitizeUser(user),
   })
 }
+
+export async function changePassword(req, res) {
+  const { current_password, new_password } = req.body
+
+  if (!current_password || !new_password || String(new_password).length < 6) {
+    return res.status(400).json({
+      message: 'Current password and a new password of at least 6 characters are required',
+    })
+  }
+
+  const rows = await query(
+    `SELECT id, password_hash
+     FROM users
+     WHERE id = :id
+     LIMIT 1`,
+    { id: req.user.id },
+  )
+
+  if (rows.length === 0) {
+    return res.status(404).json({ message: 'User not found' })
+  }
+
+  const passwordMatches = await bcrypt.compare(current_password, rows[0].password_hash)
+  if (!passwordMatches) {
+    return res.status(400).json({ message: 'Current password is incorrect' })
+  }
+
+  const passwordHash = await bcrypt.hash(new_password, 10)
+  await query(
+    `UPDATE users
+     SET password_hash = :passwordHash
+     WHERE id = :id`,
+    {
+      id: req.user.id,
+      passwordHash,
+    },
+  )
+
+  return res.json({ message: 'Password changed successfully' })
+}

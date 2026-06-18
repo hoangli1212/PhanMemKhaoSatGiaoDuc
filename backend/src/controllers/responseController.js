@@ -43,6 +43,13 @@ function hasAnswerForQuestion(answerRows, questionId) {
   })
 }
 
+function isSurveyOpenByDate(survey) {
+  const now = new Date()
+  const startDate = survey.start_date ? new Date(survey.start_date) : null
+  const endDate = survey.end_date ? new Date(survey.end_date) : null
+  return (!startDate || startDate <= now) && (!endDate || endDate >= now)
+}
+
 export async function submitResponse(req, res) {
   const surveyId = Number(req.body.survey_id)
   const answers = Array.isArray(req.body.answers) ? req.body.answers : []
@@ -52,7 +59,7 @@ export async function submitResponse(req, res) {
   }
 
   const surveyRows = await query(
-    `SELECT id, status, target_group
+    `SELECT id, status, target_group, start_date, end_date
      FROM surveys
      WHERE id = :id`,
     { id: surveyId },
@@ -65,6 +72,10 @@ export async function submitResponse(req, res) {
   const targetGroup = req.user?.stakeholder_group || 'student'
   if (survey.status !== 'published') {
     return res.status(400).json({ message: 'Survey is not open for responses' })
+  }
+
+  if (!isSurveyOpenByDate(survey)) {
+    return res.status(400).json({ message: 'Survey is not open at this time' })
   }
 
   if (![targetGroup, 'all'].includes(survey.target_group)) {
@@ -148,7 +159,7 @@ export async function getResponseStats(req, res) {
 }
 
 export async function getSurveyStatsDetail(req, res) {
-  const detail = await getSurveyDetailData(req.params.surveyId, req.user)
+  const detail = await getSurveyDetailData(req.params.surveyId, req.user, req.query.class_name)
 
   if (!detail) {
     return res.status(404).json({ message: 'Survey not found' })
@@ -158,6 +169,32 @@ export async function getSurveyStatsDetail(req, res) {
   }
 
   return res.json(detail)
+}
+
+export async function getMySurveyHistory(req, res) {
+  const targetGroup = req.user.stakeholder_group || 'student'
+  const rows = await query(
+    `SELECT
+       s.id,
+       s.title,
+       s.description,
+       s.target_group,
+       s.start_date,
+       s.end_date,
+       s.status,
+       r.submitted_at,
+       CASE WHEN r.id IS NULL THEN 0 ELSE 1 END AS is_completed
+     FROM surveys s
+     LEFT JOIN responses r ON r.survey_id = s.id AND r.respondent_id = :userId
+     WHERE (s.target_group = :targetGroup OR s.target_group = 'all')
+     ORDER BY COALESCE(r.submitted_at, s.created_at) DESC`,
+    {
+      userId: req.user.id,
+      targetGroup,
+    },
+  )
+
+  return res.json(rows)
 }
 
 async function getStatsData(user) {
@@ -275,7 +312,7 @@ export async function exportStatsExcel(req, res) {
   return res.send(buffer)
 }
 
-async function getSurveyDetailData(surveyId, user) {
+async function getSurveyDetailData(surveyId, user, className = '') {
   const surveyRows = await query(
     `SELECT
        s.id,
@@ -298,11 +335,16 @@ async function getSurveyDetailData(surveyId, user) {
   if (!canManageSurvey(user, survey)) {
     return { permissionDenied: true }
   }
+  const classFilter = className ? 'AND class_name = :className' : ''
+  const classParams = className ? { className } : {}
+
   const studentRows = await query(
     `SELECT id, student_code, full_name, class_name, email
      FROM users
      WHERE role = 'student' AND status = 'active'
+       ${classFilter}
      ORDER BY class_name ASC, full_name ASC`,
+    classParams,
   )
 
   const completedRows = await query(
@@ -317,9 +359,10 @@ async function getSurveyDetailData(surveyId, user) {
      FROM responses r
      JOIN users u ON u.id = r.respondent_id
      WHERE r.survey_id = :surveyId AND u.role = 'student'
+       ${className ? 'AND u.class_name = :className' : ''}
      GROUP BY u.id
      ORDER BY submitted_at DESC`,
-    { surveyId },
+    { surveyId, ...classParams },
   )
 
   const completedIds = new Set(completedRows.map((student) => Number(student.id)))
@@ -382,8 +425,9 @@ async function getSurveyDetailData(surveyId, user) {
      JOIN questions q ON q.id = a.question_id
      LEFT JOIN question_options qo ON qo.id = a.option_id
      WHERE r.survey_id = :surveyId
+       ${className ? 'AND u.class_name = :className' : ''}
      ORDER BY r.submitted_at DESC, u.full_name ASC, q.sort_order ASC, q.id ASC`,
-    { surveyId },
+    { surveyId, ...classParams },
   )
 
   return {
@@ -405,7 +449,7 @@ async function getSurveyDetailData(surveyId, user) {
 }
 
 export async function exportSurveyDetailExcel(req, res) {
-  const detail = await getSurveyDetailData(req.params.surveyId, req.user)
+  const detail = await getSurveyDetailData(req.params.surveyId, req.user, req.query.class_name)
 
   if (!detail) {
     return res.status(404).json({ message: 'Survey not found' })
