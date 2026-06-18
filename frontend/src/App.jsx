@@ -30,7 +30,7 @@ const emptyQuestion = {
   question_type: "text",
   is_required: true,
   sort_order: 0,
-  optionsText: "",
+  options: ["", ""],
 };
 
 function getNavItems(role) {
@@ -640,6 +640,7 @@ function QuestionManager({ surveys, questions, onChanged, onNotify }) {
     return matchesKeyword && matchesType;
   });
   const questionPages = usePagedItems(filteredQuestions, 6);
+  const hasChoices = ["single_choice", "multiple_choice"].includes(form.question_type);
 
   async function edit(question) {
     const detail = await apiRequest(`/questions/${question.id}`);
@@ -650,7 +651,33 @@ function QuestionManager({ surveys, questions, onChanged, onNotify }) {
       question_type: detail.question_type,
       is_required: Boolean(detail.is_required),
       sort_order: detail.sort_order || 0,
-      optionsText: (detail.options || []).map((option) => option.option_text).join("\n"),
+      options: detail.options?.length ? detail.options.map((option) => option.option_text) : ["", ""],
+    });
+  }
+
+  function updateQuestionType(questionType) {
+    setForm({
+      ...form,
+      question_type: questionType,
+      options: ["single_choice", "multiple_choice"].includes(questionType) ? form.options : ["", ""],
+    });
+  }
+
+  function updateOption(index, value) {
+    setForm({
+      ...form,
+      options: form.options.map((option, optionIndex) => (optionIndex === index ? value : option)),
+    });
+  }
+
+  function addOption() {
+    setForm({ ...form, options: [...form.options, ""] });
+  }
+
+  function removeOption(index) {
+    setForm({
+      ...form,
+      options: form.options.length > 2 ? form.options.filter((_, optionIndex) => optionIndex !== index) : form.options,
     });
   }
 
@@ -662,7 +689,7 @@ function QuestionManager({ surveys, questions, onChanged, onNotify }) {
       question_type: form.question_type,
       is_required: form.is_required,
       sort_order: Number(form.sort_order || 0),
-      options: form.optionsText.split("\n").map((line) => line.trim()).filter(Boolean),
+      options: hasChoices ? form.options.map((line) => line.trim()).filter(Boolean) : [],
     };
 
     await apiRequest(editingId ? `/questions/${editingId}` : "/questions", {
@@ -696,7 +723,7 @@ function QuestionManager({ surveys, questions, onChanged, onNotify }) {
           <label>Nội dung câu hỏi<textarea value={form.content} onChange={(e) => setForm({ ...form, content: e.target.value })} required /></label>
           <div className="field-row">
             <label>Loại câu hỏi
-              <select value={form.question_type} onChange={(e) => setForm({ ...form, question_type: e.target.value })}>
+              <select value={form.question_type} onChange={(e) => updateQuestionType(e.target.value)}>
                 <option value="text">Tự luận</option>
                 <option value="rating">Thang điểm</option>
                 <option value="single_choice">Một lựa chọn</option>
@@ -705,7 +732,37 @@ function QuestionManager({ surveys, questions, onChanged, onNotify }) {
             </label>
             <label>Thứ tự<input type="number" value={form.sort_order} onChange={(e) => setForm({ ...form, sort_order: e.target.value })} /></label>
           </div>
-          <label>Phương án trả lời<textarea value={form.optionsText} onChange={(e) => setForm({ ...form, optionsText: e.target.value })} placeholder="Mỗi dòng là một phương án." /></label>
+          <QuestionTypePreview type={form.question_type} />
+          {hasChoices && (
+            <div className="choice-editor">
+              <div className="choice-editor-title">
+                <strong>Phương án trả lời</strong>
+                <span>{form.question_type === "single_choice" ? "Người trả lời chọn một đáp án." : "Người trả lời có thể chọn nhiều đáp án."}</span>
+              </div>
+              {form.options.map((option, index) => (
+                <div className="choice-row" key={index}>
+                  <span className="choice-marker">{form.question_type === "single_choice" ? "○" : "□"}</span>
+                  <input
+                    value={option}
+                    onChange={(event) => updateOption(index, event.target.value)}
+                    placeholder={`Lựa chọn ${index + 1}`}
+                  />
+                  <button
+                    className="icon-button"
+                    type="button"
+                    onClick={() => removeOption(index)}
+                    disabled={form.options.length <= 2}
+                    aria-label="Xóa lựa chọn"
+                  >
+                    <Icon name="close" />
+                  </button>
+                </div>
+              ))}
+              <button className="secondary-button" type="button" onClick={addOption}>
+                Thêm lựa chọn
+              </button>
+            </div>
+          )}
           <label className="inline-check"><input type="checkbox" checked={form.is_required} onChange={(e) => setForm({ ...form, is_required: e.target.checked })} />Bắt buộc trả lời</label>
           <div className="form-actions">
             <button className="primary-button" disabled={surveys.length === 0}>{editingId ? "Lưu cập nhật" : "Thêm câu hỏi"}</button>
@@ -956,6 +1013,35 @@ function Panel({ title, children }) {
       <div className="panel-header"><h2>{title}</h2></div>
       {children}
     </section>
+  );
+}
+
+function QuestionTypePreview({ type }) {
+  const previews = {
+    text: {
+      title: "Câu trả lời ngắn hoặc đoạn văn",
+      text: "Dùng cho góp ý, nhận xét hoặc câu hỏi cần người học tự nhập nội dung.",
+    },
+    rating: {
+      title: "Thang điểm 1 đến 5",
+      text: "Phù hợp với mức độ hài lòng, đánh giá chất lượng hoặc mức đồng ý.",
+    },
+    single_choice: {
+      title: "Trắc nghiệm một đáp án",
+      text: "Dùng khi người trả lời chỉ được chọn một phương án.",
+    },
+    multiple_choice: {
+      title: "Hộp kiểm nhiều đáp án",
+      text: "Dùng khi người trả lời có thể chọn nhiều phương án cùng lúc.",
+    },
+  };
+  const preview = previews[type] || previews.text;
+
+  return (
+    <div className="question-type-preview">
+      <strong>{preview.title}</strong>
+      <span>{preview.text}</span>
+    </div>
   );
 }
 
