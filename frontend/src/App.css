@@ -1205,6 +1205,22 @@ td small {
   gap: 10px;
 }
 
+.metric-grid.compact {
+  grid-template-columns: repeat(4, minmax(140px, 1fr));
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.detail-grid h3 {
+  margin: 0 0 10px;
+  color: #242821;
+  font-size: 16px;
+}
+
 .message,
 .empty-state {
   border-color: #e2ded6;

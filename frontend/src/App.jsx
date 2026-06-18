@@ -1029,11 +1029,39 @@ function Reports({ stats, surveys, questions }) {
   const surveyStats = stats?.surveys || [];
   const [keyword, setKeyword] = useState("");
   const [exporting, setExporting] = useState("");
+  const [selectedSurveyId, setSelectedSurveyId] = useState("");
+  const [detail, setDetail] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
   const filteredStats = surveyStats.filter((survey) =>
     normalizeSearch(`${survey.title} ${survey.target_group} ${survey.status}`).includes(normalizeSearch(keyword)),
   );
   const reportPages = usePagedItems(filteredStats, 8);
   const totalResponses = surveyStats.reduce((sum, item) => sum + Number(item.response_count || 0), 0);
+  const activeSurveyId = selectedSurveyId || (surveyStats[0]?.id ? String(surveyStats[0].id) : "");
+
+  useEffect(() => {
+    if (!activeSurveyId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setDetail(null);
+      return;
+    }
+
+    let ignore = false;
+    async function loadDetail() {
+      setDetailLoading(true);
+      try {
+        const data = await apiRequest(`/responses/stats/${activeSurveyId}`);
+        if (!ignore) setDetail(data);
+      } finally {
+        if (!ignore) setDetailLoading(false);
+      }
+    }
+
+    loadDetail();
+    return () => {
+      ignore = true;
+    };
+  }, [activeSurveyId]);
 
   async function exportExcel() {
     setExporting("excel");
@@ -1106,6 +1134,94 @@ function Reports({ stats, surveys, questions }) {
     setExporting("");
   }
 
+  async function exportSurveyExcel() {
+    if (!activeSurveyId) return;
+    setExporting("survey-excel");
+    try {
+      await downloadReport(
+        `/responses/stats/${activeSurveyId}/export.xlsx`,
+        `bao-cao-chi-tiet-khao-sat-${activeSurveyId}.xlsx`,
+      );
+    } finally {
+      setExporting("");
+    }
+  }
+
+  function exportSurveyPdf() {
+    if (!detail) return;
+
+    setExporting("survey-pdf");
+    const reportWindow = window.open("", "_blank", "width=1080,height=760");
+    if (!reportWindow) {
+      setExporting("");
+      return;
+    }
+
+    const incompleteRows = detail.incomplete_students.slice(0, 200).map((student) => `
+      <tr>
+        <td>${escapeHtml(student.student_code)}</td>
+        <td>${escapeHtml(student.full_name)}</td>
+        <td>${escapeHtml(student.class_name || "")}</td>
+      </tr>
+    `).join("");
+    const answerRows = detail.answers.slice(0, 500).map((answer) => `
+      <tr>
+        <td>${escapeHtml(answer.student_code)}</td>
+        <td>${escapeHtml(answer.full_name)}</td>
+        <td>${escapeHtml(answer.question_content)}</td>
+        <td>${escapeHtml(answer.option_text || answer.answer_text || answer.rating_value || "")}</td>
+      </tr>
+    `).join("");
+
+    reportWindow.document.write(`
+      <!doctype html>
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <title>Báo cáo chi tiết khảo sát</title>
+          <style>
+            body { font-family: Arial, sans-serif; color: #20242c; margin: 32px; }
+            h1 { margin: 0 0 6px; font-size: 24px; }
+            h2 { margin-top: 24px; font-size: 18px; }
+            .muted { color: #666; margin-bottom: 22px; }
+            .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 22px; }
+            .metric { border: 1px solid #ddd; border-radius: 8px; padding: 12px; }
+            .metric span { display: block; color: #666; font-size: 12px; }
+            .metric strong { font-size: 24px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+            th, td { border: 1px solid #ddd; padding: 8px 9px; text-align: left; font-size: 12px; vertical-align: top; }
+            th { background: #f3f3f3; }
+            @media print { button { display: none; } body { margin: 20px; } }
+          </style>
+        </head>
+        <body>
+          <button onclick="window.print()">Lưu/In PDF</button>
+          <h1>Báo cáo chi tiết khảo sát</h1>
+          <div class="muted">${escapeHtml(detail.survey.title)} | Ngày xuất: ${new Date().toLocaleString("vi-VN")}</div>
+          <div class="metrics">
+            <div class="metric"><span>Tổng sinh viên</span><strong>${detail.summary.total_students}</strong></div>
+            <div class="metric"><span>Đã hoàn thành</span><strong>${detail.summary.completed_students}</strong></div>
+            <div class="metric"><span>Chưa hoàn thành</span><strong>${detail.summary.incomplete_students}</strong></div>
+            <div class="metric"><span>Câu hỏi</span><strong>${detail.summary.question_count}</strong></div>
+          </div>
+          <h2>Sinh viên chưa hoàn thành</h2>
+          <table>
+            <thead><tr><th>Mã sinh viên</th><th>Họ tên</th><th>Lớp</th></tr></thead>
+            <tbody>${incompleteRows || '<tr><td colspan="3">Không có sinh viên chưa hoàn thành</td></tr>'}</tbody>
+          </table>
+          <h2>Câu trả lời chi tiết</h2>
+          <table>
+            <thead><tr><th>Mã sinh viên</th><th>Họ tên</th><th>Câu hỏi</th><th>Câu trả lời</th></tr></thead>
+            <tbody>${answerRows || '<tr><td colspan="4">Chưa có câu trả lời</td></tr>'}</tbody>
+          </table>
+        </body>
+      </html>
+    `);
+    reportWindow.document.close();
+    reportWindow.focus();
+    setExporting("");
+  }
+
   return (
     <div className="screen-stack">
       <div className="metric-grid">
@@ -1148,6 +1264,74 @@ function Reports({ stats, surveys, questions }) {
         </div>
         {filteredStats.length === 0 && <EmptyState text="Chưa có dữ liệu thống kê phù hợp." />}
         <Pagination page={reportPages.page} totalPages={reportPages.totalPages} onPageChange={reportPages.setPage} />
+      </Panel>
+      <Panel title="Chi tiết theo từng khảo sát">
+        <div className="report-toolbar">
+          <select value={activeSurveyId} onChange={(event) => setSelectedSurveyId(event.target.value)}>
+            {surveyStats.map((survey) => (
+              <option key={survey.id} value={survey.id}>
+                {survey.title}
+              </option>
+            ))}
+          </select>
+          <div className="report-actions">
+            <button className="secondary-button" onClick={exportSurveyPdf} disabled={!detail || Boolean(exporting)}>
+              Xuất PDF chi tiết
+            </button>
+            <button className="primary-button" onClick={exportSurveyExcel} disabled={!activeSurveyId || Boolean(exporting)}>
+              {exporting === "survey-excel" ? "Đang xuất..." : "Xuất Excel chi tiết"}
+            </button>
+          </div>
+        </div>
+        {detailLoading && <div className="message">Đang tải chi tiết khảo sát...</div>}
+        {!detailLoading && detail && (
+          <div className="screen-stack">
+            <div className="metric-grid compact">
+              <Metric icon="users" label="Tổng sinh viên" value={detail.summary.total_students} />
+              <Metric icon="check" label="Đã hoàn thành" value={detail.summary.completed_students} />
+              <Metric icon="chart" label="Chưa hoàn thành" value={detail.summary.incomplete_students} />
+              <Metric icon="question" label="Câu hỏi" value={detail.summary.question_count} />
+            </div>
+            <div className="detail-grid">
+              <section>
+                <h3>Sinh viên chưa hoàn thành</h3>
+                <div className="table-wrap">
+                  <table>
+                    <thead><tr><th>Mã sinh viên</th><th>Họ tên</th><th>Lớp</th></tr></thead>
+                    <tbody>
+                      {detail.incomplete_students.slice(0, 10).map((student) => (
+                        <tr key={student.id}>
+                          <td>{student.student_code}</td>
+                          <td>{student.full_name}</td>
+                          <td>{student.class_name || ""}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {detail.incomplete_students.length === 0 && <EmptyState text="Tất cả sinh viên đã hoàn thành khảo sát." />}
+              </section>
+              <section>
+                <h3>Thống kê lựa chọn</h3>
+                <div className="table-wrap">
+                  <table>
+                    <thead><tr><th>Câu hỏi</th><th>Phương án</th><th>Lượt chọn</th></tr></thead>
+                    <tbody>
+                      {detail.choice_summary.slice(0, 10).map((item) => (
+                        <tr key={`${item.question_id}-${item.option_id}`}>
+                          <td>{item.content}</td>
+                          <td>{item.option_text}</td>
+                          <td>{item.selected_count}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {detail.choice_summary.length === 0 && <EmptyState text="Khảo sát chưa có câu hỏi lựa chọn." />}
+              </section>
+            </div>
+          </div>
+        )}
       </Panel>
     </div>
   );
