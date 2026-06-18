@@ -123,6 +123,27 @@ async function apiRequest(path, options = {}) {
   return data;
 }
 
+function normalizeSearch(value) {
+  return String(value || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+function usePagedItems(items, pageSize = 6) {
+  const [page, setPage] = useState(1);
+  const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const start = (currentPage - 1) * pageSize;
+
+  return {
+    page: currentPage,
+    totalPages,
+    pageItems: items.slice(start, start + pageSize),
+    setPage,
+  };
+}
+
 function App() {
   const [auth, setAuth] = useState(() => {
     const token = localStorage.getItem("authToken");
@@ -377,6 +398,15 @@ function Dashboard({ auth, surveys, questions, users, stats }) {
 function UserManager({ users, onChanged, onNotify }) {
   const [form, setForm] = useState(emptyUser);
   const [editingId, setEditingId] = useState(null);
+  const [keyword, setKeyword] = useState("");
+  const [roleFilter, setRoleFilter] = useState("all");
+  const filteredUsers = users.filter((user) => {
+    const haystack = normalizeSearch(`${user.full_name} ${user.email} ${user.student_code} ${user.class_name}`);
+    const matchesKeyword = haystack.includes(normalizeSearch(keyword));
+    const matchesRole = roleFilter === "all" || user.role === roleFilter;
+    return matchesKeyword && matchesRole;
+  });
+  const userPages = usePagedItems(filteredUsers, 8);
 
   function edit(user) {
     setEditingId(user.id);
@@ -441,11 +471,25 @@ function UserManager({ users, onChanged, onNotify }) {
       </Panel>
 
       <Panel title="Danh sách người dùng">
+        <div className="list-toolbar">
+          <input
+            value={keyword}
+            onChange={(event) => setKeyword(event.target.value)}
+            placeholder="Tìm theo tên, email, mã sinh viên"
+          />
+          <select value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)}>
+            <option value="all">Tất cả vai trò</option>
+            <option value="admin">Admin</option>
+            <option value="survey_creator">Cán bộ khảo sát</option>
+            <option value="student">Sinh viên</option>
+            <option value="respondent">Người tham gia</option>
+          </select>
+        </div>
         <div className="table-wrap">
           <table>
             <thead><tr><th>Họ tên</th><th>Tài khoản</th><th>Vai trò</th><th>Trạng thái</th><th></th></tr></thead>
             <tbody>
-              {users.map((user) => (
+              {userPages.pageItems.map((user) => (
                 <tr key={user.id}>
                   <td>{user.full_name}<br /><small>{user.class_name || ""}</small></td>
                   <td>{user.student_code || user.email}</td>
@@ -460,6 +504,8 @@ function UserManager({ users, onChanged, onNotify }) {
             </tbody>
           </table>
         </div>
+        {filteredUsers.length === 0 && <EmptyState text="Không tìm thấy người dùng phù hợp." />}
+        <Pagination page={userPages.page} totalPages={userPages.totalPages} onPageChange={userPages.setPage} />
       </Panel>
     </div>
   );
@@ -468,6 +514,15 @@ function UserManager({ users, onChanged, onNotify }) {
 function SurveyManager({ auth, surveys, onChanged, onNotify }) {
   const [form, setForm] = useState(emptySurvey);
   const [editingId, setEditingId] = useState(null);
+  const [keyword, setKeyword] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const filteredSurveys = surveys.filter((survey) => {
+    const haystack = normalizeSearch(`${survey.title} ${survey.description} ${survey.creator_name}`);
+    const matchesKeyword = haystack.includes(normalizeSearch(keyword));
+    const matchesStatus = statusFilter === "all" || survey.status === statusFilter;
+    return matchesKeyword && matchesStatus;
+  });
+  const surveyPages = usePagedItems(filteredSurveys, 5);
 
   function edit(survey) {
     setEditingId(survey.id);
@@ -544,15 +599,29 @@ function SurveyManager({ auth, surveys, onChanged, onNotify }) {
       </Panel>
 
       <Panel title="Danh sách khảo sát">
+        <div className="list-toolbar">
+          <input
+            value={keyword}
+            onChange={(event) => setKeyword(event.target.value)}
+            placeholder="Tìm khảo sát"
+          />
+          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+            <option value="all">Tất cả trạng thái</option>
+            <option value="draft">Bản nháp</option>
+            <option value="published">Đang mở</option>
+            <option value="closed">Đã đóng</option>
+          </select>
+        </div>
         <div className="survey-list">
-          {surveys.map((survey) => (
+          {surveyPages.pageItems.map((survey) => (
             <SurveyCard key={survey.id} survey={survey}>
               <button className="secondary-button small" onClick={() => edit(survey)}>Sửa</button>
               <button className="danger-button small" onClick={() => remove(survey)}>Xóa</button>
             </SurveyCard>
           ))}
-          {surveys.length === 0 && <EmptyState text="Chưa có khảo sát." />}
+          {filteredSurveys.length === 0 && <EmptyState text="Chưa có khảo sát phù hợp." />}
         </div>
+        <Pagination page={surveyPages.page} totalPages={surveyPages.totalPages} onPageChange={surveyPages.setPage} />
       </Panel>
     </div>
   );
@@ -561,7 +630,16 @@ function SurveyManager({ auth, surveys, onChanged, onNotify }) {
 function QuestionManager({ surveys, questions, onChanged, onNotify }) {
   const [form, setForm] = useState(emptyQuestion);
   const [editingId, setEditingId] = useState(null);
+  const [keyword, setKeyword] = useState("");
+  const [typeFilter, setTypeFilter] = useState("all");
   const selectedSurveyId = form.survey_id || (surveys[0]?.id ? String(surveys[0].id) : "");
+  const filteredQuestions = questions.filter((question) => {
+    const haystack = normalizeSearch(`${question.content} ${question.survey_title}`);
+    const matchesKeyword = haystack.includes(normalizeSearch(keyword));
+    const matchesType = typeFilter === "all" || question.question_type === typeFilter;
+    return matchesKeyword && matchesType;
+  });
+  const questionPages = usePagedItems(filteredQuestions, 6);
 
   async function edit(question) {
     const detail = await apiRequest(`/questions/${question.id}`);
@@ -637,10 +715,24 @@ function QuestionManager({ surveys, questions, onChanged, onNotify }) {
       </Panel>
 
       <Panel title="Danh sách câu hỏi">
+        <div className="list-toolbar">
+          <input
+            value={keyword}
+            onChange={(event) => setKeyword(event.target.value)}
+            placeholder="Tìm nội dung câu hỏi"
+          />
+          <select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)}>
+            <option value="all">Tất cả loại câu hỏi</option>
+            <option value="text">Tự luận</option>
+            <option value="rating">Thang điểm</option>
+            <option value="single_choice">Một lựa chọn</option>
+            <option value="multiple_choice">Nhiều lựa chọn</option>
+          </select>
+        </div>
         <div className="question-list">
-          {questions.map((question, index) => (
+          {questionPages.pageItems.map((question, index) => (
             <article className="question-card" key={question.id}>
-              <div className="question-index">{index + 1}</div>
+              <div className="question-index">{(questionPages.page - 1) * 6 + index + 1}</div>
               <div>
                 <div className="card-meta">
                   <span className="code">{questionTypeLabel(question.question_type)}</span>
@@ -655,8 +747,9 @@ function QuestionManager({ surveys, questions, onChanged, onNotify }) {
               </div>
             </article>
           ))}
-          {questions.length === 0 && <EmptyState text="Chưa có câu hỏi." />}
+          {filteredQuestions.length === 0 && <EmptyState text="Chưa có câu hỏi phù hợp." />}
         </div>
+        <Pagination page={questionPages.page} totalPages={questionPages.totalPages} onPageChange={questionPages.setPage} />
       </Panel>
     </div>
   );
@@ -667,6 +760,11 @@ function AnswerSurvey({ surveys, onChanged, onNotify }) {
   const [surveyId, setSurveyId] = useState("");
   const [surveyForm, setSurveyForm] = useState(null);
   const [answers, setAnswers] = useState({});
+  const [keyword, setKeyword] = useState("");
+  const filteredOpenSurveys = openSurveys.filter((survey) =>
+    normalizeSearch(`${survey.title} ${survey.description}`).includes(normalizeSearch(keyword)),
+  );
+  const openSurveyPages = usePagedItems(filteredOpenSurveys, 5);
 
   async function loadSurvey(id) {
     setSurveyId(id);
@@ -711,14 +809,22 @@ function AnswerSurvey({ surveys, onChanged, onNotify }) {
   return (
     <div className="response-grid">
       <Panel title="Chọn khảo sát đang mở">
+        <div className="list-toolbar single">
+          <input
+            value={keyword}
+            onChange={(event) => setKeyword(event.target.value)}
+            placeholder="Tìm khảo sát cần trả lời"
+          />
+        </div>
         <div className="survey-list">
-          {openSurveys.map((survey) => (
+          {openSurveyPages.pageItems.map((survey) => (
             <SurveyCard key={survey.id} survey={survey}>
               <button className="primary-button small" onClick={() => loadSurvey(survey.id)}>Trả lời</button>
             </SurveyCard>
           ))}
-          {openSurveys.length === 0 && <EmptyState text="Hiện chưa có khảo sát đang mở." />}
+          {filteredOpenSurveys.length === 0 && <EmptyState text="Hiện chưa có khảo sát đang mở." />}
         </div>
+        <Pagination page={openSurveyPages.page} totalPages={openSurveyPages.totalPages} onPageChange={openSurveyPages.setPage} />
       </Panel>
 
       <Panel title="Phiếu trả lời">
@@ -772,6 +878,11 @@ function AnswerSurvey({ surveys, onChanged, onNotify }) {
 
 function Reports({ stats, surveys, questions }) {
   const surveyStats = stats?.surveys || [];
+  const [keyword, setKeyword] = useState("");
+  const filteredStats = surveyStats.filter((survey) =>
+    normalizeSearch(`${survey.title} ${survey.target_group} ${survey.status}`).includes(normalizeSearch(keyword)),
+  );
+  const reportPages = usePagedItems(filteredStats, 8);
 
   return (
     <div className="screen-stack">
@@ -782,11 +893,18 @@ function Reports({ stats, surveys, questions }) {
         <Metric icon="chart" label="Đang mở" value={surveys.filter((survey) => survey.status === "published").length} />
       </div>
       <Panel title="Thống kê phản hồi theo khảo sát">
+        <div className="list-toolbar single">
+          <input
+            value={keyword}
+            onChange={(event) => setKeyword(event.target.value)}
+            placeholder="Tìm khảo sát trong thống kê"
+          />
+        </div>
         <div className="table-wrap">
           <table>
             <thead><tr><th>Khảo sát</th><th>Đối tượng</th><th>Câu hỏi</th><th>Phản hồi</th><th>Trạng thái</th></tr></thead>
             <tbody>
-              {surveyStats.map((survey) => (
+              {reportPages.pageItems.map((survey) => (
                 <tr key={survey.id}>
                   <td>{survey.title}</td>
                   <td>{groupLabel(survey.target_group)}</td>
@@ -798,6 +916,8 @@ function Reports({ stats, surveys, questions }) {
             </tbody>
           </table>
         </div>
+        {filteredStats.length === 0 && <EmptyState text="Chưa có dữ liệu thống kê phù hợp." />}
+        <Pagination page={reportPages.page} totalPages={reportPages.totalPages} onPageChange={reportPages.setPage} />
       </Panel>
     </div>
   );
@@ -836,6 +956,30 @@ function Panel({ title, children }) {
       <div className="panel-header"><h2>{title}</h2></div>
       {children}
     </section>
+  );
+}
+
+function Pagination({ page, totalPages, onPageChange }) {
+  if (totalPages <= 1) return null;
+
+  return (
+    <div className="pagination">
+      <button
+        className="secondary-button small"
+        disabled={page === 1}
+        onClick={() => onPageChange(page - 1)}
+      >
+        Trước
+      </button>
+      <span>Trang {page} / {totalPages}</span>
+      <button
+        className="secondary-button small"
+        disabled={page === totalPages}
+        onClick={() => onPageChange(page + 1)}
+      >
+        Sau
+      </button>
+    </div>
   );
 }
 
