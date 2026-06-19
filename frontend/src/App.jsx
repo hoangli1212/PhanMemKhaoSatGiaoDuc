@@ -204,9 +204,14 @@ function App() {
   const [toast, setToast] = useState(null);
   const [error, setError] = useState("");
   const [confirmState, setConfirmState] = useState(null);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
 
   const navItems = useMemo(() => getNavItems(auth?.user.role), [auth]);
   const title = navItems.find((item) => item.id === activePage)?.label || "Tổng quan";
+  const studentNotifications = useMemo(() => {
+    if (!["student", "respondent"].includes(auth?.user.role)) return [];
+    return surveys.filter((survey) => survey.status === "published" && !survey.is_completed);
+  }, [auth, surveys]);
 
   async function loadData() {
     if (!auth) return;
@@ -278,6 +283,11 @@ function App() {
     setActivePage("dashboard");
   }
 
+  function openSurveyFromNotification() {
+    setNotificationsOpen(false);
+    setActivePage("answer");
+  }
+
   if (!auth) return <LoginScreen onLogin={handleLogin} />;
 
   return (
@@ -331,6 +341,24 @@ function App() {
           <button className="secondary-button" onClick={loadData}>
             Tải lại
           </button>
+          {["student", "respondent"].includes(auth.user.role) && (
+            <div className="notification-wrap">
+              <button
+                className="secondary-button notification-button"
+                onClick={() => setNotificationsOpen((value) => !value)}
+              >
+                Thông báo
+                {studentNotifications.length > 0 && <span>{studentNotifications.length}</span>}
+              </button>
+              {notificationsOpen && (
+                <NotificationPanel
+                  notifications={studentNotifications}
+                  onOpenSurvey={openSurveyFromNotification}
+                  onClose={() => setNotificationsOpen(false)}
+                />
+              )}
+            </div>
+          )}
           <button className="secondary-button" onClick={handleLogout}>
             Đăng xuất
           </button>
@@ -463,6 +491,32 @@ function Dashboard({ auth, surveys, questions, users, stats }) {
           <article><Icon name="chart" /><strong>Hệ thống</strong><span>Lưu phản hồi và thống kê kết quả.</span></article>
         </div>
       </Panel>
+    </div>
+  );
+}
+
+function NotificationPanel({ notifications, onOpenSurvey, onClose }) {
+  return (
+    <div className="notification-panel">
+      <div className="notification-head">
+        <strong>Thông báo khảo sát</strong>
+        <button onClick={onClose} aria-label="Đóng thông báo">×</button>
+      </div>
+      {notifications.length === 0 && (
+        <div className="notification-empty">Không có khảo sát mới cần thực hiện.</div>
+      )}
+      {notifications.length > 0 && (
+        <div className="notification-list">
+          {notifications.slice(0, 5).map((survey) => (
+            <button key={survey.id} className="notification-item" onClick={onOpenSurvey}>
+              <strong>{survey.title}</strong>
+              <span>
+                Hạn: {formatDate(survey.end_date) || "Chưa đặt hạn"} · {groupLabel(survey.target_group)}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -214,13 +214,99 @@ svg {
   background: rgba(255, 255, 255, 0.94);
   border-bottom: 1px solid #d9e0ea;
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) minmax(260px, 420px) auto auto;
+  grid-template-columns: minmax(220px, 1fr) auto auto auto;
   align-items: center;
   gap: 16px;
   position: sticky;
   top: 0;
   z-index: 10;
   backdrop-filter: blur(10px);
+}
+
+.notification-wrap {
+  position: relative;
+}
+
+.notification-button {
+  position: relative;
+}
+
+.notification-button span {
+  min-width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: #b42318;
+  color: #ffffff;
+  display: inline-grid;
+  place-items: center;
+  padding: 0 6px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.notification-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 10px);
+  z-index: 50;
+  width: min(360px, calc(100vw - 32px));
+  border: 1px solid #e2ded6;
+  border-radius: 10px;
+  background: #fffefa;
+  box-shadow: 0 18px 42px rgba(24, 31, 28, 0.18);
+  padding: 12px;
+}
+
+.notification-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.notification-head button {
+  border: 0;
+  background: transparent;
+  color: #6f756f;
+  font-size: 20px;
+  cursor: pointer;
+}
+
+.notification-empty {
+  color: #6f756f;
+  padding: 12px;
+  background: #fbfaf7;
+  border-radius: 8px;
+}
+
+.notification-list {
+  display: grid;
+  gap: 8px;
+}
+
+.notification-item {
+  border: 1px solid #eee8dd;
+  border-radius: 8px;
+  background: #fbfaf7;
+  padding: 10px 12px;
+  display: grid;
+  gap: 4px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.notification-item:hover {
+  background: #f7f0e5;
+}
+
+.notification-item strong {
+  color: #242821;
+}
+
+.notification-item span {
+  color: #6f756f;
+  font-size: 13px;
 }
 
 .page-title span {
@@ -911,6 +997,21 @@ th {
   .topbar {
     grid-template-columns: auto minmax(0, 1fr) auto;
     padding: 14px 16px;
+  }
+
+  .notification-wrap {
+    grid-column: 1 / -1;
+    justify-self: stretch;
+  }
+
+  .notification-button {
+    width: 100%;
+  }
+
+  .notification-panel {
+    left: 0;
+    right: auto;
+    width: 100%;
   }
 
   .search-box {
