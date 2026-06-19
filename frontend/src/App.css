@@ -1411,6 +1411,70 @@ td small {
   border-color: #e2ded6;
 }
 
+.toast {
+  position: fixed;
+  right: 22px;
+  bottom: 22px;
+  z-index: 60;
+  max-width: min(420px, calc(100vw - 32px));
+  border-radius: 10px;
+  box-shadow: 0 16px 36px rgba(28, 34, 30, 0.18);
+  padding: 13px 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.toast.success {
+  background: #ecfdf3;
+  color: #067647;
+  border: 1px solid #abefc6;
+}
+
+.toast.error {
+  background: #fff1f0;
+  color: #b42318;
+  border: 1px solid #fecdca;
+}
+
+.toast button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 20px;
+  cursor: pointer;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(20, 29, 26, 0.42);
+}
+
+.confirm-modal {
+  width: min(440px, 100%);
+  border-radius: 10px;
+  background: #fffefa;
+  border: 1px solid #e2ded6;
+  box-shadow: 0 24px 52px rgba(24, 31, 28, 0.22);
+  padding: 22px;
+}
+
+.confirm-modal h2 {
+  margin: 0 0 8px;
+  color: #242821;
+  font-size: 20px;
+}
+
+.confirm-modal p {
+  margin: 0 0 18px;
+  color: #6f756f;
+}
+
 .empty-state {
   background: #fbfaf7;
 }

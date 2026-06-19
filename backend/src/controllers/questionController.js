@@ -1,4 +1,5 @@
 import pool, { query } from '../config/db.js'
+import { writeAuditLog } from '../utils/auditLogger.js'
 
 const allowedQuestionTypes = new Set(['single_choice', 'multiple_choice', 'rating', 'text'])
 
@@ -25,6 +26,13 @@ function validateQuestionPayload(payload, partial = false) {
 
   if (payload.options !== undefined && !Array.isArray(payload.options)) {
     errors.push('options must be an array')
+  }
+
+  if (
+    ['single_choice', 'multiple_choice'].includes(payload.question_type) &&
+    normalizeOptions(payload.options || []).length < 2
+  ) {
+    errors.push('choice questions must have at least 2 options')
   }
 
   return errors
@@ -184,6 +192,12 @@ export async function createQuestion(req, res) {
     await connection.commit()
 
     const question = await getQuestionWithOptions(result.insertId)
+    await writeAuditLog(req, {
+      action: 'create',
+      entityType: 'question',
+      entityId: result.insertId,
+      description: `Created question for survey #${req.body.survey_id}`,
+    })
     return res.status(201).json(question)
   } catch (err) {
     await connection.rollback()
@@ -266,6 +280,12 @@ export async function updateQuestion(req, res) {
     await connection.commit()
 
     const question = await getQuestionWithOptions(req.params.id)
+    await writeAuditLog(req, {
+      action: 'update',
+      entityType: 'question',
+      entityId: req.params.id,
+      description: `Updated question #${req.params.id}`,
+    })
     return res.json(question)
   } catch (err) {
     await connection.rollback()
@@ -290,5 +310,11 @@ export async function deleteQuestion(req, res) {
     return res.status(404).json({ message: 'Question not found' })
   }
 
+  await writeAuditLog(req, {
+    action: 'delete',
+    entityType: 'question',
+    entityId: req.params.id,
+    description: `Deleted question #${req.params.id}`,
+  })
   return res.status(204).send()
 }

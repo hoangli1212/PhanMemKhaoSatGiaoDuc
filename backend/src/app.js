@@ -1,6 +1,7 @@
 import cors from 'cors'
 import express from 'express'
 
+import auditRoutes from './routes/auditRoutes.js'
 import authRoutes from './routes/authRoutes.js'
 import healthRoutes from './routes/healthRoutes.js'
 import questionRoutes from './routes/questionRoutes.js'
@@ -14,6 +15,7 @@ app.use(cors())
 app.use(express.json())
 
 app.use('/health', healthRoutes)
+app.use('/api/audit-logs', auditRoutes)
 app.use('/api/auth', authRoutes)
 app.use('/api/questions', questionRoutes)
 app.use('/api/responses', responseRoutes)

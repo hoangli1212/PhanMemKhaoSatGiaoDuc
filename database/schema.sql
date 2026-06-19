@@ -108,12 +108,30 @@ CREATE TABLE answers (
   CONSTRAINT chk_answers_rating_value CHECK (rating_value IS NULL OR rating_value BETWEEN 1 AND 5)
 );
 
+-- 7. Audit logs: track important admin/survey creator actions.
+CREATE TABLE audit_logs (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  actor_id BIGINT,
+  actor_name VARCHAR(150),
+  action VARCHAR(80) NOT NULL,
+  entity_type VARCHAR(80) NOT NULL,
+  entity_id BIGINT,
+  description VARCHAR(500),
+  metadata JSON,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_audit_logs_actor
+    FOREIGN KEY (actor_id) REFERENCES users(id)
+    ON DELETE SET NULL ON UPDATE CASCADE
+);
+
 CREATE INDEX idx_users_role ON users(role);
 CREATE INDEX idx_surveys_status ON surveys(status);
 CREATE INDEX idx_surveys_creator ON surveys(creator_id);
 CREATE INDEX idx_questions_survey ON questions(survey_id);
 CREATE INDEX idx_responses_survey ON responses(survey_id);
 CREATE INDEX idx_answers_response ON answers(response_id);
+CREATE INDEX idx_audit_logs_actor ON audit_logs(actor_id);
+CREATE INDEX idx_audit_logs_entity ON audit_logs(entity_type, entity_id);
 
 -- Default password for seed accounts: 123456
 INSERT INTO users (full_name, email, password_hash, role, stakeholder_group) VALUES

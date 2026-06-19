@@ -1,4 +1,5 @@
 import { query } from '../config/db.js'
+import { writeAuditLog } from '../utils/auditLogger.js'
 
 const allowedSurveyStatuses = new Set(['draft', 'published', 'closed'])
 const allowedTargetGroups = new Set(['student', 'lecturer', 'alumni', 'employer', 'all'])
@@ -35,6 +36,10 @@ function validateSurveyPayload(payload, partial = false) {
 
   if (payload.status !== undefined && !allowedSurveyStatuses.has(payload.status)) {
     errors.push('status is invalid')
+  }
+
+  if (payload.start_date && payload.end_date && new Date(payload.end_date) < new Date(payload.start_date)) {
+    errors.push('end_date must be greater than or equal to start_date')
   }
 
   return errors
@@ -191,6 +196,12 @@ export async function createSurvey(req, res) {
     return res.status(400).json({ message: 'Invalid survey payload', errors })
   }
 
+  if (payload.status === 'published') {
+    return res.status(400).json({
+      message: 'Survey must be created as draft before adding questions',
+    })
+  }
+
   const result = await query(
     `INSERT INTO surveys
       (title, description, creator_id, target_group, start_date, end_date, status)
@@ -208,6 +219,12 @@ export async function createSurvey(req, res) {
   )
 
   const rows = await query('SELECT * FROM surveys WHERE id = :id', { id: result.insertId })
+  await writeAuditLog(req, {
+    action: 'create',
+    entityType: 'survey',
+    entityId: result.insertId,
+    description: `Created survey: ${payload.title}`,
+  })
   return res.status(201).json(rows[0])
 }
 
@@ -225,6 +242,13 @@ export async function updateSurvey(req, res) {
   const current = currentRows[0]
   if (!canManageSurvey(req.user, current)) {
     return res.status(403).json({ message: 'Permission denied' })
+  }
+
+  if (req.body.status === 'published') {
+    const questionRows = await query('SELECT COUNT(*) AS count FROM questions WHERE survey_id = :id', { id: req.params.id })
+    if (Number(questionRows[0].count) === 0) {
+      return res.status(400).json({ message: 'Survey must have at least one question before publishing' })
+    }
   }
 
   await query(
@@ -251,6 +275,12 @@ export async function updateSurvey(req, res) {
   )
 
   const rows = await query('SELECT * FROM surveys WHERE id = :id', { id: req.params.id })
+  await writeAuditLog(req, {
+    action: 'update',
+    entityType: 'survey',
+    entityId: req.params.id,
+    description: `Updated survey: ${rows[0].title}`,
+  })
   return res.json(rows[0])
 }
 
@@ -270,5 +300,11 @@ export async function deleteSurvey(req, res) {
     return res.status(404).json({ message: 'Survey not found' })
   }
 
+  await writeAuditLog(req, {
+    action: 'delete',
+    entityType: 'survey',
+    entityId: req.params.id,
+    description: `Deleted survey: ${currentRows[0].title}`,
+  })
   return res.status(204).send()
 }

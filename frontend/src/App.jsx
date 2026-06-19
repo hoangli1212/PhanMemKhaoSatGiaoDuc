@@ -41,6 +41,7 @@ function getNavItems(role) {
       { id: "surveys", label: "Khảo sát", icon: "survey" },
       { id: "questions", label: "Câu hỏi", icon: "question" },
       { id: "reports", label: "Thống kê", icon: "chart" },
+      { id: "audit", label: "Nhật ký", icon: "report" },
     ];
   }
 
@@ -200,8 +201,9 @@ function App() {
   const [users, setUsers] = useState([]);
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [notice, setNotice] = useState("");
+  const [toast, setToast] = useState(null);
   const [error, setError] = useState("");
+  const [confirmState, setConfirmState] = useState(null);
 
   const navItems = useMemo(() => getNavItems(auth?.user.role), [auth]);
   const title = navItems.find((item) => item.id === activePage)?.label || "Tổng quan";
@@ -242,8 +244,24 @@ function App() {
   }, [auth]);
 
   function notify(text) {
-    setNotice(text);
-    window.setTimeout(() => setNotice(""), 2500);
+    setToast({ type: "success", text });
+    window.setTimeout(() => setToast(null), 2600);
+  }
+
+  function notifyError(text) {
+    setToast({ type: "error", text });
+    window.setTimeout(() => setToast(null), 3200);
+  }
+
+  function confirmAction({ title, text, confirmText = "Xóa" }) {
+    return new Promise((resolve) => {
+      setConfirmState({ title, text, confirmText, resolve });
+    });
+  }
+
+  function closeConfirm(result) {
+    confirmState?.resolve(result);
+    setConfirmState(null);
   }
 
   function handleLogin(result) {
@@ -321,19 +339,18 @@ function App() {
         <section className="content">
           {loading && <div className="message">Đang tải dữ liệu...</div>}
           {error && <div className="message error-message">{error}</div>}
-          {notice && <div className="message success-message">{notice}</div>}
 
           {activePage === "dashboard" && (
             <Dashboard auth={auth} surveys={surveys} questions={questions} users={users} stats={stats} />
           )}
           {activePage === "users" && auth.user.role === "admin" && (
-            <UserManager users={users} onChanged={loadData} onNotify={notify} />
+            <UserManager users={users} onChanged={loadData} onNotify={notify} onConfirm={confirmAction} />
           )}
           {activePage === "surveys" && ["admin", "survey_creator"].includes(auth.user.role) && (
-            <SurveyManager auth={auth} surveys={surveys} onChanged={loadData} onNotify={notify} />
+            <SurveyManager auth={auth} surveys={surveys} questions={questions} onChanged={loadData} onNotify={notify} onConfirm={confirmAction} onError={notifyError} />
           )}
           {activePage === "questions" && ["admin", "survey_creator"].includes(auth.user.role) && (
-            <QuestionManager surveys={surveys} questions={questions} onChanged={loadData} onNotify={notify} />
+            <QuestionManager surveys={surveys} questions={questions} onChanged={loadData} onNotify={notify} onConfirm={confirmAction} onError={notifyError} />
           )}
           {activePage === "reports" && ["admin", "survey_creator"].includes(auth.user.role) && (
             <Reports stats={stats} surveys={surveys} questions={questions} />
@@ -347,8 +364,21 @@ function App() {
           {activePage === "profile" && (
             <ProfilePage user={auth.user} onNotify={notify} />
           )}
+          {activePage === "audit" && auth.user.role === "admin" && (
+            <AuditLogs />
+          )}
         </section>
       </main>
+      {toast && <Toast type={toast.type} text={toast.text} onClose={() => setToast(null)} />}
+      {confirmState && (
+        <ConfirmDialog
+          title={confirmState.title}
+          text={confirmState.text}
+          confirmText={confirmState.confirmText}
+          onCancel={() => closeConfirm(false)}
+          onConfirm={() => closeConfirm(true)}
+        />
+      )}
     </div>
   );
 }
@@ -437,7 +467,7 @@ function Dashboard({ auth, surveys, questions, users, stats }) {
   );
 }
 
-function UserManager({ users, onChanged, onNotify }) {
+function UserManager({ users, onChanged, onNotify, onConfirm }) {
   const [form, setForm] = useState(emptyUser);
   const [editingId, setEditingId] = useState(null);
   const [keyword, setKeyword] = useState("");
@@ -475,7 +505,11 @@ function UserManager({ users, onChanged, onNotify }) {
   }
 
   async function remove(user) {
-    if (!window.confirm(`Xóa người dùng "${user.full_name}"?`)) return;
+    const confirmed = await onConfirm({
+      title: "Xóa người dùng",
+      text: `Bạn có chắc muốn xóa "${user.full_name}"?`,
+    });
+    if (!confirmed) return;
     await apiRequest(`/users/${user.id}`, { method: "DELETE" });
     onNotify("Đã xóa người dùng.");
     onChanged();
@@ -505,6 +539,24 @@ function UserManager({ users, onChanged, onNotify }) {
     }
   }
 
+  function downloadExcelTemplate() {
+    const rows = [
+      ["Mã sinh viên", "Họ", "Tên", "Lớp", "Ngày sinh"],
+      ["2251220277", "Trương Phi", "Hoàng", "22CT4", "01/01/2004"],
+      ["2251220149", "Lê Vũ", "Hoàng", "22CT1", "09/08/2004"],
+    ];
+    const csv = `\uFEFF${rows.map((row) => row.join(",")).join("\n")}`;
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "mau-import-sinh-vien.csv";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+  }
+
   return (
     <div className="crud-grid">
       <div className="screen-stack">
@@ -523,9 +575,14 @@ function UserManager({ users, onChanged, onNotify }) {
               <span>Mã sinh viên, Họ, Tên, Lớp, Ngày sinh. Có thể dùng Họ tên thay cho Họ/Tên.</span>
               <span>Mã sinh viên là tên đăng nhập, ngày sinh là mật khẩu, role mặc định là student.</span>
             </div>
-            <button className="primary-button" disabled={!importFile || isImporting}>
-              {isImporting ? "Đang import..." : "Import sinh viên"}
-            </button>
+            <div className="form-actions">
+              <button className="secondary-button" type="button" onClick={downloadExcelTemplate}>
+                Tải file mẫu
+              </button>
+              <button className="primary-button" disabled={!importFile || isImporting}>
+                {isImporting ? "Đang import..." : "Import sinh viên"}
+              </button>
+            </div>
           </form>
           {importResult && (
             <div className="import-result">
@@ -611,7 +668,7 @@ function UserManager({ users, onChanged, onNotify }) {
   );
 }
 
-function SurveyManager({ auth, surveys, onChanged, onNotify }) {
+function SurveyManager({ auth, surveys, questions, onChanged, onNotify, onConfirm, onError }) {
   const [form, setForm] = useState(emptySurvey);
   const [editingId, setEditingId] = useState(null);
   const [keyword, setKeyword] = useState("");
@@ -638,6 +695,17 @@ function SurveyManager({ auth, surveys, onChanged, onNotify }) {
 
   async function submit(event) {
     event.preventDefault();
+    if (form.start_date && form.end_date && form.end_date < form.start_date) {
+      onError("Ngày kết thúc không được nhỏ hơn ngày bắt đầu.");
+      return;
+    }
+    if (form.status === "published" && editingId) {
+      const questionCount = questions.filter((question) => Number(question.survey_id) === Number(editingId)).length;
+      if (questionCount === 0) {
+        onError("Khảo sát phải có ít nhất 1 câu hỏi trước khi mở.");
+        return;
+      }
+    }
     const payload = {
       ...form,
       creator_id: auth.user.id,
@@ -657,7 +725,11 @@ function SurveyManager({ auth, surveys, onChanged, onNotify }) {
   }
 
   async function remove(survey) {
-    if (!window.confirm(`Xóa khảo sát "${survey.title}"?`)) return;
+    const confirmed = await onConfirm({
+      title: "Xóa khảo sát",
+      text: `Bạn có chắc muốn xóa khảo sát "${survey.title}"? Toàn bộ câu hỏi và phản hồi liên quan cũng sẽ bị xóa.`,
+    });
+    if (!confirmed) return;
     await apiRequest(`/surveys/${survey.id}`, { method: "DELETE" });
     onNotify("Đã xóa khảo sát.");
     onChanged();
@@ -727,7 +799,7 @@ function SurveyManager({ auth, surveys, onChanged, onNotify }) {
   );
 }
 
-function QuestionManager({ surveys, questions, onChanged, onNotify }) {
+function QuestionManager({ surveys, questions, onChanged, onNotify, onConfirm, onError }) {
   const [form, setForm] = useState(emptyQuestion);
   const [editingId, setEditingId] = useState(null);
   const [keyword, setKeyword] = useState("");
@@ -783,13 +855,18 @@ function QuestionManager({ surveys, questions, onChanged, onNotify }) {
 
   async function submit(event) {
     event.preventDefault();
+    const cleanOptions = form.options.map((line) => line.trim()).filter(Boolean);
+    if (hasChoices && cleanOptions.length < 2) {
+      onError("Câu hỏi lựa chọn phải có ít nhất 2 phương án.");
+      return;
+    }
     const payload = {
       survey_id: Number(selectedSurveyId),
       content: form.content,
       question_type: form.question_type,
       is_required: form.is_required,
       sort_order: Number(form.sort_order || 0),
-      options: hasChoices ? form.options.map((line) => line.trim()).filter(Boolean) : [],
+      options: hasChoices ? cleanOptions : [],
     };
 
     await apiRequest(editingId ? `/questions/${editingId}` : "/questions", {
@@ -804,7 +881,11 @@ function QuestionManager({ surveys, questions, onChanged, onNotify }) {
   }
 
   async function remove(question) {
-    if (!window.confirm("Xóa câu hỏi này?")) return;
+    const confirmed = await onConfirm({
+      title: "Xóa câu hỏi",
+      text: "Bạn có chắc muốn xóa câu hỏi này?",
+    });
+    if (!confirmed) return;
     await apiRequest(`/questions/${question.id}`, { method: "DELETE" });
     onNotify("Đã xóa câu hỏi.");
     onChanged();
@@ -1181,6 +1262,68 @@ function ProfilePage({ user, onNotify }) {
         </form>
       </Panel>
     </div>
+  );
+}
+
+function AuditLogs() {
+  const [logs, setLogs] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [keyword, setKeyword] = useState("");
+
+  useEffect(() => {
+    let ignore = false;
+    async function loadLogs() {
+      setLoading(true);
+      try {
+        const rows = await apiRequest("/audit-logs");
+        if (!ignore) setLogs(rows);
+      } finally {
+        if (!ignore) setLoading(false);
+      }
+    }
+
+    loadLogs();
+    return () => {
+      ignore = true;
+    };
+  }, []);
+
+  const filteredLogs = logs.filter((log) =>
+    normalizeSearch(`${log.actor_name} ${log.action} ${log.entity_type} ${log.description}`).includes(normalizeSearch(keyword)),
+  );
+  const pages = usePagedItems(filteredLogs, 10);
+
+  return (
+    <Panel title="Nhật ký thao tác quản trị">
+      <div className="list-toolbar single">
+        <input
+          value={keyword}
+          onChange={(event) => setKeyword(event.target.value)}
+          placeholder="Tìm theo người thao tác, hành động, đối tượng"
+        />
+      </div>
+      {loading && <div className="message">Đang tải nhật ký...</div>}
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Thời gian</th><th>Người thao tác</th><th>Hành động</th><th>Đối tượng</th><th>Mô tả</th></tr>
+          </thead>
+          <tbody>
+            {pages.pageItems.map((log) => (
+              <tr key={log.id}>
+                <td>{new Date(log.created_at).toLocaleString("vi-VN")}</td>
+                <td>{log.actor_name || "Không xác định"}</td>
+                <td>{log.action}</td>
+                <td>{log.entity_type} #{log.entity_id || ""}</td>
+                <td>{log.description}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {!loading && filteredLogs.length === 0 && <EmptyState text="Chưa có nhật ký thao tác." />}
+      <Pagination page={pages.page} totalPages={pages.totalPages} onPageChange={pages.setPage} />
+    </Panel>
   );
 }
 
@@ -1727,6 +1870,30 @@ function Pagination({ page, totalPages, onPageChange }) {
 
 function EmptyState({ text }) {
   return <div className="empty-state">{text}</div>;
+}
+
+function Toast({ type, text, onClose }) {
+  return (
+    <div className={`toast ${type === "error" ? "error" : "success"}`}>
+      <span>{text}</span>
+      <button onClick={onClose} aria-label="Đóng thông báo">×</button>
+    </div>
+  );
+}
+
+function ConfirmDialog({ title, text, confirmText, onCancel, onConfirm }) {
+  return (
+    <div className="modal-backdrop">
+      <section className="confirm-modal">
+        <h2>{title}</h2>
+        <p>{text}</p>
+        <div className="form-actions">
+          <button className="secondary-button" onClick={onCancel}>Hủy</button>
+          <button className="danger-button" onClick={onConfirm}>{confirmText}</button>
+        </div>
+      </section>
+    </div>
+  );
 }
 
 function Icon({ name }) {

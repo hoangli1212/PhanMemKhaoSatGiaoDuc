@@ -2,6 +2,7 @@ import bcrypt from 'bcryptjs'
 import xlsx from 'xlsx'
 
 import { query } from '../config/db.js'
+import { writeAuditLog } from '../utils/auditLogger.js'
 
 const allowedRoles = new Set(['admin', 'survey_creator', 'respondent', 'student'])
 const allowedStatuses = new Set(['active', 'locked'])
@@ -169,6 +170,12 @@ export async function createUser(req, res) {
      FROM users WHERE id = :id`,
     { id: result.insertId },
   )
+  await writeAuditLog(req, {
+    action: 'create',
+    entityType: 'user',
+    entityId: result.insertId,
+    description: `Created user: ${req.body.full_name}`,
+  })
   return res.status(201).json(sanitizeUser(rows[0]))
 }
 
@@ -216,16 +223,29 @@ export async function updateUser(req, res) {
      FROM users WHERE id = :id`,
     { id: req.params.id },
   )
+  await writeAuditLog(req, {
+    action: 'update',
+    entityType: 'user',
+    entityId: req.params.id,
+    description: `Updated user: ${updated[0].full_name}`,
+  })
   return res.json(sanitizeUser(updated[0]))
 }
 
 export async function deleteUser(req, res) {
+  const currentRows = await query('SELECT id, full_name FROM users WHERE id = :id', { id: req.params.id })
   const result = await query('DELETE FROM users WHERE id = :id', { id: req.params.id })
 
   if (result.affectedRows === 0) {
     return res.status(404).json({ message: 'User not found' })
   }
 
+  await writeAuditLog(req, {
+    action: 'delete',
+    entityType: 'user',
+    entityId: req.params.id,
+    description: `Deleted user: ${currentRows[0]?.full_name || req.params.id}`,
+  })
   return res.status(204).send()
 }
 
@@ -310,6 +330,17 @@ export async function importStudents(req, res) {
       class_name: student.class_name,
     })
   }
+
+  await writeAuditLog(req, {
+    action: 'import',
+    entityType: 'user',
+    description: `Imported students: ${imported.length} rows`,
+    metadata: {
+      created,
+      updated,
+      skipped: invalidRows.length,
+    },
+  })
 
   return res.status(201).json({
     total_rows: students.length,
