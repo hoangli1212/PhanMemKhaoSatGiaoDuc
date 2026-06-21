@@ -1,60 +1,68 @@
-# Ph?n M?m Kh?o S?t Gi?o D?c
+# Phần Mềm Khảo Sát Giáo Dục
 
-H? th?ng kh?o s?t l?y ? ki?n c?c b?n li?n quan trong l?nh v?c gi?o d?c. D? ?n g?m backend ExpressJS, c? s? d? li?u MySQL v? frontend ReactJS.
+Hệ thống khảo sát lấy ý kiến các bên liên quan trong lĩnh vực giáo dục. Đồ án gồm Backend sử dụng ExpressJS, cơ sở dữ liệu MySQL và Frontend sử dụng ReactJS.
 
-## Ch?c n?ng ch?nh
+## Chức năng chính
 
-- ??ng nh?p theo vai tr?: qu?n tr? vi?n, ng??i t?o kh?o s?t, sinh vi?n.
-- Qu?n l? ng??i d?ng, import danh s?ch sinh vi?n t? Excel.
-- Qu?n l? kh?o s?t, c?u h?i v? nhi?u ki?u c?u h?i gi?ng Google Forms.
-- Sinh vi?n nh?n th?ng b?o kh?o s?t m?i v? g?i c?u tr? l?i.
-- Th?ng k? k?t qu?, danh s?ch ?? ho?n th?nh/ch?a ho?n th?nh.
-- Xu?t b?o c?o PDF ho?c Excel theo t?ng kh?o s?t.
-- Ghi nh?t k? thao t?c qu?n tr? ?? truy v?t t?o/s?a/x?a.
+* Đăng nhập theo vai trò: Quản trị viên, Người tạo khảo sát, Sinh viên.
+* Quản lý người dùng, hỗ trợ import danh sách sinh viên từ file Excel.
+* Quản lý khảo sát, câu hỏi với nhiều loại câu hỏi tương tự Google Forms.
+* Sinh viên nhận thông báo khi có khảo sát mới và gửi câu trả lời trực tuyến.
+* Thống kê kết quả khảo sát, theo dõi danh sách đã hoàn thành và chưa hoàn thành.
+* Xuất báo cáo PDF hoặc Excel theo từng khảo sát.
+* Ghi nhật ký thao tác quản trị để truy vết các hoạt động tạo, sửa, xóa dữ liệu.
 
-## C?ng ngh? s? d?ng
+## Công nghệ sử dụng
 
-- Frontend: ReactJS, Vite.
-- Backend: Node.js, ExpressJS.
-- Database: MySQL/MariaDB tr?n XAMPP.
-- X?c th?c: JWT.
+* **Frontend:** ReactJS, Vite.
+* **Backend:** Node.js, ExpressJS.
+* **Database:** MySQL/MariaDB chạy trên XAMPP.
+* **Xác thực:** JWT (JSON Web Token).
 
-## C?u tr?c th? m?c
+## Cấu trúc thư mục
 
 ```text
 PhanMemKhaoSatGiaoDuc/
-??? backend/      API ExpressJS
-??? database/     File SQL v? t?i li?u thi?t k? database
-??? frontend/     Giao di?n ReactJS
-??? README.md
+├── backend/      # API ExpressJS
+├── database/     # File SQL và tài liệu thiết kế cơ sở dữ liệu
+├── frontend/     # Giao diện ReactJS
+└── README.md
 ```
 
-## Y?u c?u c?i ??t
+## Yêu cầu cài đặt
 
-- Node.js 18 tr? l?n.
-- XAMPP ?? b?t Apache v? MySQL.
-- Git n?u mu?n clone/push source code.
+* Node.js phiên bản 18 trở lên.
+* XAMPP đã bật Apache và MySQL.
+* Git (nếu muốn clone hoặc push mã nguồn).
 
-## C?i ??t database
+## Cài đặt cơ sở dữ liệu
 
-1. M? XAMPP v? b?t MySQL.
-2. V?o phpMyAdmin ho?c MySQL CLI.
-3. T?o database:
+### Bước 1: Khởi động MySQL
+
+Mở XAMPP và bật dịch vụ **MySQL**.
+
+### Bước 2: Tạo cơ sở dữ liệu
+
+Truy cập phpMyAdmin hoặc MySQL Command Line và thực hiện lệnh:
 
 ```sql
-CREATE DATABASE edu_survey CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE DATABASE edu_survey
+CHARACTER SET utf8mb4
+COLLATE utf8mb4_unicode_ci;
 ```
 
-4. Import c?c file SQL trong th? m?c `database` theo th? t?:
+### Bước 3: Import dữ liệu
 
-```text
-database/schema.sql
-database/add_student_login_fields.sql
-database/add_audit_logs.sql
-database/update_login_seed_passwords.sql
-```
+Import các file SQL trong thư mục `database` theo thứ tự sau:
 
-## Ch?y backend
+1. `database/schema.sql`
+2. `database/add_student_login_fields.sql`
+3. `database/add_audit_logs.sql`
+4. `database/update_login_seed_passwords.sql`
+
+## Chạy Backend
+
+Mở Terminal và thực hiện:
 
 ```bash
 cd backend
@@ -63,13 +71,13 @@ copy .env.example .env
 npm run dev
 ```
 
-Backend m?c ??nh ch?y t?i:
+Backend mặc định chạy tại:
 
 ```text
 http://127.0.0.1:3000
 ```
 
-C?u h?nh database m?c ??nh trong file `.env`:
+### Cấu hình môi trường (.env)
 
 ```env
 DB_HOST=127.0.0.1
@@ -81,15 +89,17 @@ JWT_SECRET=your_secret_key
 PORT=3000
 ```
 
-N?u mu?n th?m nhanh danh s?ch sinh vi?n m?u:
+### Tạo dữ liệu mẫu sinh viên
+
+Nếu muốn thêm nhanh danh sách sinh viên mẫu:
 
 ```bash
 npm run seed:students
 ```
 
-## Ch?y frontend
+## Chạy Frontend
 
-M? terminal kh?c:
+Mở một Terminal khác và thực hiện:
 
 ```bash
 cd frontend
@@ -97,36 +107,45 @@ npm install
 npm run dev -- --host 127.0.0.1 --port 5173
 ```
 
-Frontend ch?y t?i:
+Frontend mặc định chạy tại:
 
 ```text
 http://127.0.0.1:5173
 ```
 
-N?u backend ch?y kh?c ??a ch? m?c ??nh, t?o file `frontend/.env`:
+Nếu Backend chạy ở địa chỉ khác, tạo file `frontend/.env`:
 
 ```env
 VITE_API_BASE_URL=http://127.0.0.1:3000/api
 ```
 
-## T?i kho?n demo
+## Tài khoản demo
+
+### Quản trị viên (Admin)
+
+* Email/Tên đăng nhập: `admin@example.com`
+* Mật khẩu: `123456`
+
+### Người tạo khảo sát (Survey Creator)
+
+* Email/Tên đăng nhập: `creator@example.com`
+* Mật khẩu: `123456`
+
+### Sinh viên
+
+* Tên đăng nhập: Mã sinh viên.
+* Mật khẩu mặc định: Ngày sinh theo định dạng `dd/mm/yyyy`.
+
+Ví dụ:
 
 ```text
-Admin:
-Email/T?n ??ng nh?p: admin@example.com
-M?t kh?u: 123456
-
-Ng??i t?o kh?o s?t:
-Email/T?n ??ng nh?p: creator@example.com
-M?t kh?u: 123456
-
-Sinh vi?n:
-T?n ??ng nh?p: m? sinh vi?n
-M?t kh?u: ng?y sinh d?ng dd/mm/yyyy
-V? d?: 2251220277 / 01/01/2004
+Tên đăng nhập: 2251220277
+Mật khẩu: 01/01/2004
 ```
 
-## Ki?m tra nhanh
+## Kiểm tra hệ thống
+
+### Kiểm tra Frontend
 
 ```bash
 cd frontend
@@ -134,23 +153,29 @@ npm run lint
 npm run build
 ```
 
+### Kiểm tra Backend
+
 ```bash
 cd backend
 npm run check
 ```
 
-## Ghi ch? import sinh vi?n
+## Hướng dẫn import sinh viên
 
-File Excel n?n c? c?c c?t:
+File Excel cần có các cột sau:
 
 ```text
 student_code | last_name | first_name | class_name | date_of_birth
 ```
 
-V? d?:
+Ví dụ:
 
 ```text
-2251220277 | Tr??ng Phi | Ho?ng | 22CT4 | 01/01/2004
+2251220277 | Trương Phi | Hoàng | 22CT4 | 01/01/2004
 ```
 
-Sau khi import, m? sinh vi?n l? t?n ??ng nh?p, ng?y sinh l? m?t kh?u ban ??u v? vai tr? l? `student`.
+Sau khi import:
+
+* `student_code` được sử dụng làm tên đăng nhập.
+* `date_of_birth` được sử dụng làm mật khẩu mặc định.
+* Vai trò mặc định của tài khoản là `student`.
